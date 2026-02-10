@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#4a7c8a">
+  <meta name="description" content="Organise ta journée d'étude avec un contrat quotidien et un timer de concentration.">
+  <title>Study Protocol Manager</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ====== EN-TÊTE ====== -->
+  <header class="app-header">
+    <h1 class="app-title">Study Protocol</h1>
+    <p class="app-date" id="currentDate"></p>
+  </header>
+
+  <main id="app">
+
+    <!-- ====== VUE 1 : CRÉATION DU CONTRAT ====== -->
+    <section id="viewContract" class="view">
+      <h2 class="section-title">Ma mission du jour</h2>
+      <p class="section-hint">Choisis entre 3 et 5 tâches pour ta journée. Pas plus&nbsp;: mieux vaut finir peu que commencer beaucoup.</p>
+
+      <div id="taskList" class="task-list">
+        <!-- Les formulaires de tâches sont générés par JS -->
+      </div>
+
+      <div class="task-actions">
+        <button id="btnAddTask" class="btn btn-secondary" type="button">+ Ajouter une tâche</button>
+      </div>
+
+      <!-- Exemple pré-rempli -->
+      <details class="demo-hint">
+        <summary>Voir un exemple de contrat</summary>
+        <ul>
+          <li><strong>Résumé chapitre 4</strong> — Français — 25 min — Moyen</li>
+          <li><strong>Exercices équations</strong> — Maths — 50 min — Difficile</li>
+          <li><strong>Relire notes cours</strong> — Sciences — 25 min — Facile</li>
+        </ul>
+        <button id="btnLoadDemo" class="btn btn-link" type="button">Charger cet exemple</button>
+      </details>
+
+      <button id="btnLockContract" class="btn btn-primary btn-lock" type="button" disabled>
+        Démarrer ma journée
+      </button>
+    </section>
+
+    <!-- ====== VUE 2 : CONTRAT VERROUILLÉ ====== -->
+    <section id="viewLocked" class="view hidden">
+      <h2 class="section-title">Mon contrat du jour</h2>
+
+      <div class="progress-summary" id="progressSummary">
+        <!-- Progression globale -->
+      </div>
+
+      <ul id="lockedTaskList" class="locked-list">
+        <!-- Tâches verrouillées générées par JS -->
+      </ul>
+
+      <button id="btnResetDay" class="btn btn-secondary btn-reset" type="button">Nouvelle journée</button>
+    </section>
+
+    <!-- ====== VUE 3 : TIMER DE SESSION ====== -->
+    <section id="viewTimer" class="view hidden">
+      <button id="btnBackToList" class="btn btn-link btn-back" type="button">&larr; Retour au contrat</button>
+
+      <div class="timer-task-name" id="timerTaskName"></div>
+      <div class="timer-subject" id="timerSubject"></div>
+
+      <div class="timer-display">
+        <!-- Barre de progression circulaire (SVG) -->
+        <svg class="timer-ring" viewBox="0 0 200 200">
+          <circle class="timer-ring-bg" cx="100" cy="100" r="90" />
+          <circle class="timer-ring-progress" id="timerRingProgress" cx="100" cy="100" r="90" />
+        </svg>
+        <span class="timer-digits" id="timerDigits">25:00</span>
+      </div>
+
+      <div class="timer-controls">
+        <button id="btnPause" class="btn btn-secondary" type="button">Pause</button>
+        <button id="btnFinish" class="btn btn-primary" type="button">Terminer</button>
+        <button id="btnAbandon" class="btn btn-danger" type="button">Abandonner</button>
+      </div>
+
+      <label class="sound-toggle">
+        <input type="checkbox" id="chkSound" checked>
+        Son à la fin de la session
+      </label>
+
+      <!-- Suggestion de pause -->
+      <div id="breakSuggestion" class="break-suggestion hidden">
+        <p>Session terminée. Prends une pause de <strong id="breakDuration"></strong> minutes pour recharger.</p>
+        <button id="btnDismissBreak" class="btn btn-secondary" type="button">Compris</button>
+      </div>
+    </section>
+
+    <!-- ====== DIALOGUE DE CONFIRMATION ====== -->
+    <div id="confirmDialog" class="dialog-overlay hidden">
+      <div class="dialog-box">
+        <p id="confirmMessage">Es-tu sûr·e de vouloir abandonner cette session ?</p>
+        <div class="dialog-actions">
+          <button id="btnConfirmYes" class="btn btn-danger" type="button">Oui, abandonner</button>
+          <button id="btnConfirmNo" class="btn btn-secondary" type="button">Non, continuer</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

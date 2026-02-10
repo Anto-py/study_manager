@@ -1,0 +1,474 @@
+/* ============================================================
+   Study Protocol Manager — Feuille de styles
+   Palette apaisante : bleus/verts doux, sans rouge agressif.
+   Mobile-first, responsive.
+   ============================================================ */
+
+/* ---------- Variables globales ---------- */
+:root {
+  --color-bg:        #f0f4f8;
+  --color-surface:   #ffffff;
+  --color-primary:   #4a7c8a;
+  --color-primary-light: #6ba3b3;
+  --color-secondary: #7ca5a0;
+  --color-accent:    #5b9279;
+  --color-text:      #2d3748;
+  --color-text-light:#718096;
+  --color-border:    #d2dce6;
+  --color-danger:    #b07d62;      /* orange doux, pas de rouge vif */
+  --color-done:      #5b9279;
+  --color-done-bg:   #e6f4ec;
+  --radius:          12px;
+  --shadow:          0 2px 8px rgba(0,0,0,.06);
+  --font:            system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* ---------- Reset minimal ---------- */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font);
+  background: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.5;
+  min-height: 100dvh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- En-tête ---------- */
+.app-header {
+  background: var(--color-primary);
+  color: #fff;
+  text-align: center;
+  padding: 1.25rem 1rem .75rem;
+}
+.app-title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+.app-date {
+  font-size: .85rem;
+  opacity: .85;
+  margin-top: .2rem;
+}
+
+/* ---------- Layout principal ---------- */
+main {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.view { display: block; }
+.hidden { display: none !important; }
+
+/* ---------- Titres de section ---------- */
+.section-title {
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin-bottom: .25rem;
+}
+.section-hint {
+  font-size: .85rem;
+  color: var(--color-text-light);
+  margin-bottom: 1rem;
+}
+
+/* ---------- Formulaire de tâche ---------- */
+.task-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  margin-bottom: .75rem;
+  box-shadow: var(--shadow);
+  position: relative;
+  transition: border-color .2s;
+}
+.task-card:focus-within {
+  border-color: var(--color-primary-light);
+}
+
+.task-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: .5rem;
+}
+.task-number {
+  font-weight: 700;
+  font-size: .8rem;
+  color: var(--color-primary);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.btn-remove-task {
+  background: none;
+  border: none;
+  font-size: 1.1rem;
+  color: var(--color-text-light);
+  cursor: pointer;
+  padding: .2rem .4rem;
+  border-radius: 4px;
+  transition: color .15s, background .15s;
+}
+.btn-remove-task:hover {
+  color: var(--color-danger);
+  background: rgba(176,125,98,.1);
+}
+
+.field { margin-bottom: .5rem; }
+.field label {
+  display: block;
+  font-size: .78rem;
+  font-weight: 600;
+  color: var(--color-text-light);
+  margin-bottom: .2rem;
+}
+.field input,
+.field select {
+  width: 100%;
+  padding: .5rem .6rem;
+  font-size: .95rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  transition: border-color .2s;
+}
+.field input:focus,
+.field select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+/* Slider difficulté */
+.difficulty-group {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+.difficulty-group input[type="range"] {
+  flex: 1;
+  accent-color: var(--color-primary);
+}
+.difficulty-label {
+  font-size: .82rem;
+  font-weight: 600;
+  color: var(--color-primary);
+  min-width: 55px;
+  text-align: right;
+}
+
+/* Grille 2 colonnes sur les petits champs */
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .5rem;
+}
+
+/* ---------- Boutons ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font);
+  font-size: .95rem;
+  font-weight: 600;
+  padding: .65rem 1.2rem;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background .2s, opacity .2s, transform .1s;
+}
+.btn:active { transform: scale(.97); }
+.btn:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--color-primary);
+  color: #fff;
+}
+.btn-primary:hover:not(:disabled) { background: var(--color-primary-light); }
+
+.btn-secondary {
+  background: var(--color-border);
+  color: var(--color-text);
+}
+.btn-secondary:hover:not(:disabled) { background: #c1cdda; }
+
+.btn-danger {
+  background: var(--color-danger);
+  color: #fff;
+}
+.btn-danger:hover:not(:disabled) { opacity: .85; }
+
+.btn-link {
+  background: none;
+  color: var(--color-primary);
+  padding: .4rem .2rem;
+  font-size: .85rem;
+  text-decoration: underline;
+}
+
+/* ---------- Actions du formulaire ---------- */
+.task-actions {
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+.btn-lock {
+  width: 100%;
+  padding: .85rem;
+  font-size: 1.05rem;
+  margin-top: .5rem;
+}
+
+/* ---------- Exemple pré-rempli ---------- */
+.demo-hint {
+  background: var(--color-surface);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius);
+  padding: .75rem 1rem;
+  margin-bottom: 1rem;
+  font-size: .85rem;
+  color: var(--color-text-light);
+}
+.demo-hint summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.demo-hint ul {
+  margin: .5rem 0 .5rem 1.2rem;
+}
+
+/* ---------- Vue contrat verrouillé ---------- */
+.progress-summary {
+  background: var(--color-surface);
+  border-radius: var(--radius);
+  padding: 1rem;
+  margin-bottom: 1rem;
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+.progress-bar-wrapper {
+  background: var(--color-border);
+  border-radius: 999px;
+  height: 10px;
+  margin-top: .5rem;
+  overflow: hidden;
+}
+.progress-bar-fill {
+  background: var(--color-accent);
+  height: 100%;
+  border-radius: 999px;
+  transition: width .4s ease;
+}
+.progress-text {
+  font-size: .9rem;
+  font-weight: 600;
+}
+
+.locked-list {
+  list-style: none;
+}
+.locked-item {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: .85rem 1rem;
+  margin-bottom: .6rem;
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  box-shadow: var(--shadow);
+  transition: opacity .3s, border-color .3s;
+}
+.locked-item.done {
+  border-color: var(--color-done);
+  background: var(--color-done-bg);
+}
+.locked-item.done .locked-item-name {
+  text-decoration: line-through;
+  opacity: .6;
+}
+.locked-item-check {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: .85rem;
+  color: transparent;
+  transition: all .2s;
+}
+.locked-item.done .locked-item-check {
+  background: var(--color-done);
+  border-color: var(--color-done);
+  color: #fff;
+}
+.locked-item-body {
+  flex: 1;
+  min-width: 0;
+}
+.locked-item-name {
+  font-weight: 600;
+  font-size: .95rem;
+}
+.locked-item-meta {
+  font-size: .78rem;
+  color: var(--color-text-light);
+}
+.btn-start-task {
+  background: var(--color-primary);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: .45rem .75rem;
+  font-size: .82rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .2s;
+}
+.btn-start-task:hover { background: var(--color-primary-light); }
+.btn-start-task:disabled {
+  opacity: .4;
+  cursor: not-allowed;
+}
+
+.btn-reset {
+  width: 100%;
+  margin-top: .75rem;
+}
+
+/* ---------- Timer ---------- */
+.btn-back {
+  margin-bottom: .5rem;
+}
+
+.timer-task-name {
+  text-align: center;
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin-bottom: .15rem;
+}
+.timer-subject {
+  text-align: center;
+  font-size: .85rem;
+  color: var(--color-text-light);
+  margin-bottom: 1rem;
+}
+
+.timer-display {
+  position: relative;
+  width: 220px;
+  height: 220px;
+  margin: 0 auto 1.25rem;
+}
+.timer-ring {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+.timer-ring-bg {
+  fill: none;
+  stroke: var(--color-border);
+  stroke-width: 8;
+}
+.timer-ring-progress {
+  fill: none;
+  stroke: var(--color-primary);
+  stroke-width: 8;
+  stroke-linecap: round;
+  /* Périmètre = 2 * PI * 90 ≈ 565.49 */
+  stroke-dasharray: 565.49;
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset .5s ease;
+}
+
+.timer-digits {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.8rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}
+
+.timer-controls {
+  display: flex;
+  justify-content: center;
+  gap: .5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.sound-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .4rem;
+  font-size: .82rem;
+  color: var(--color-text-light);
+  margin-bottom: 1rem;
+  cursor: pointer;
+}
+.sound-toggle input { accent-color: var(--color-primary); }
+
+/* Suggestion de pause */
+.break-suggestion {
+  background: #e8f5ee;
+  border: 1px solid #b2d8c4;
+  border-radius: var(--radius);
+  padding: 1rem;
+  text-align: center;
+  margin-top: .5rem;
+}
+
+/* ---------- Dialogue de confirmation ---------- */
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 1rem;
+}
+.dialog-box {
+  background: var(--color-surface);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  max-width: 340px;
+  width: 100%;
+  box-shadow: 0 8px 30px rgba(0,0,0,.15);
+  text-align: center;
+}
+.dialog-box p {
+  margin-bottom: 1rem;
+  font-weight: 500;
+}
+.dialog-actions {
+  display: flex;
+  gap: .5rem;
+  justify-content: center;
+}
+
+/* ---------- Responsive > 600px ---------- */
+@media (min-width: 600px) {
+  main { padding: 1.5rem; }
+  .timer-display { width: 260px; height: 260px; }
+  .timer-digits { font-size: 3.2rem; }
+}
