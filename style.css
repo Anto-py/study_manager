@@ -1,9 +1,9 @@
 /* ============================================================
-   Study Protocol Manager — Feuille de styles (étape 2)
+   Study Protocol Manager — Feuille de styles (étape 3)
    Palette apaisante : bleus/verts doux, sans rouge agressif.
    Mobile-first, responsive.
-   Nouveaux composants : navigation, historique, modal recall,
-   toast, indicateurs de statut.
+   Nouveaux composants : dashboard chronobiologique, heatmap,
+   graphique qualité, étoiles, insights, suggestion créneau.
    ============================================================ */
 
 /* ---------- Variables globales ---------- */
@@ -64,21 +64,22 @@ body {
   gap: 0;
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
-  max-width: 520px;
+  max-width: 600px;
   margin: 0 auto;
 }
 .nav-tab {
   flex: 1;
-  padding: .7rem 1rem;
+  padding: .7rem .5rem;
   background: none;
   border: none;
   border-bottom: 3px solid transparent;
   font-family: var(--font);
-  font-size: .9rem;
+  font-size: .82rem;
   font-weight: 600;
   color: var(--color-text-light);
   cursor: pointer;
   transition: color .2s, border-color .2s;
+  white-space: nowrap;
 }
 .nav-tab:hover {
   color: var(--color-primary);
@@ -90,7 +91,7 @@ body {
 
 /* ---------- Layout principal ---------- */
 main {
-  max-width: 520px;
+  max-width: 600px;
   margin: 0 auto;
   padding: 1rem;
 }
@@ -249,6 +250,11 @@ main {
   text-decoration: underline;
 }
 
+.btn-small {
+  padding: .4rem .7rem;
+  font-size: .78rem;
+}
+
 /* ---------- Actions du formulaire ---------- */
 .task-actions {
   text-align: center;
@@ -260,6 +266,19 @@ main {
   padding: .85rem;
   font-size: 1.05rem;
   margin-top: .5rem;
+}
+
+/* ---------- Suggestion de créneau (étape 3) ---------- */
+.suggestion-creneau {
+  background: #e8f5ee;
+  border: 1px solid #b2d8c4;
+  border-left: 4px solid var(--color-accent);
+  border-radius: var(--radius);
+  padding: .75rem 1rem;
+  margin-bottom: 1rem;
+  font-size: .85rem;
+  color: var(--color-text);
+  line-height: 1.4;
 }
 
 /* ---------- Exemple pré-rempli ---------- */
@@ -505,7 +524,7 @@ main {
   margin-top: .5rem;
 }
 
-/* ---------- Modal overlay (récupération active + détail résumé) ---------- */
+/* ---------- Modal overlay (récupération active + détail résumé + qualité) ---------- */
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -524,6 +543,9 @@ main {
   width: 100%;
   box-shadow: 0 8px 30px rgba(0,0,0,.18);
   animation: modal-appear .25s ease;
+}
+.modal-box-compact {
+  max-width: 360px;
 }
 @keyframes modal-appear {
   from { transform: translateY(20px); opacity: 0; }
@@ -603,6 +625,53 @@ main {
   padding: .5rem 0;
 }
 
+/* ---------- Modal évaluation qualité (étoiles) ---------- */
+.quality-stars {
+  display: flex;
+  justify-content: center;
+  gap: .4rem;
+  margin: .75rem 0 .5rem;
+}
+.quality-star {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: .25rem;
+  transition: transform .15s;
+}
+.quality-star:hover {
+  transform: scale(1.15);
+}
+.quality-star .star-svg {
+  width: 36px;
+  height: 36px;
+  fill: var(--color-border);
+  transition: fill .15s;
+}
+.quality-star.active .star-svg {
+  fill: #f0b429;
+}
+.quality-star:hover .star-svg {
+  fill: #f0c34e;
+}
+
+.quality-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: .72rem;
+  color: var(--color-text-light);
+  padding: 0 .25rem;
+}
+
+.quality-selected-label {
+  text-align: center;
+  font-size: .85rem;
+  font-weight: 600;
+  color: var(--color-primary);
+  margin-top: .4rem;
+  min-height: 1.3em;
+}
+
 /* ---------- Dialogue de confirmation ---------- */
 .dialog-overlay {
   position: fixed;
@@ -678,6 +747,16 @@ main {
   align-items: center;
   margin-bottom: .35rem;
 }
+.history-card-badges {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+.history-quality {
+  font-size: .82rem;
+  color: #f0b429;
+  letter-spacing: 1px;
+}
 .history-date {
   font-size: .78rem;
   color: var(--color-text-light);
@@ -728,10 +807,287 @@ main {
   margin-top: .5rem;
 }
 
+/* ========================================================================
+   DASHBOARD CHRONOBIOLOGIQUE (étape 3)
+   ======================================================================== */
+
+/* ---------- Cards statistiques ---------- */
+.stats-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .6rem;
+  margin-bottom: 1.25rem;
+}
+.stats-cards .stat-card:last-child {
+  grid-column: 1 / -1;
+}
+.stat-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: .85rem 1rem;
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+.stat-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  line-height: 1.2;
+}
+.stat-label {
+  font-size: .78rem;
+  color: var(--color-text-light);
+  font-weight: 600;
+  margin-top: .2rem;
+}
+.stat-compare {
+  font-size: .75rem;
+  font-weight: 600;
+  margin-top: .3rem;
+}
+.stat-compare-up {
+  color: var(--color-done);
+}
+.stat-compare-down {
+  color: var(--color-danger);
+}
+.stat-detail {
+  font-size: .75rem;
+  color: var(--color-text-light);
+  margin-top: .3rem;
+}
+.stat-matieres {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: .35rem;
+  margin-top: .5rem;
+}
+.stat-matiere-tag {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: .2rem .6rem;
+  font-size: .75rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.stat-empty {
+  font-size: .78rem;
+  color: var(--color-text-light);
+  font-style: italic;
+}
+
+/* ---------- Sections du dashboard ---------- */
+.dashboard-section {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  margin-bottom: 1rem;
+  box-shadow: var(--shadow);
+}
+.dashboard-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: .5rem;
+}
+.dashboard-section-title {
+  font-size: .95rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+.dashboard-section-hint {
+  font-size: .78rem;
+  color: var(--color-text-light);
+  margin-bottom: .75rem;
+}
+
+/* Bouton export PNG discret */
+.btn-export-png {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: .25rem .5rem;
+  font-size: .7rem;
+  font-weight: 600;
+  color: var(--color-text-light);
+  cursor: pointer;
+  transition: background .2s, color .2s;
+}
+.btn-export-png:hover {
+  background: var(--color-border);
+  color: var(--color-text);
+}
+
+/* ---------- Heatmap hebdomadaire ---------- */
+.heatmap-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: .75rem;
+  gap: .5rem;
+}
+.heatmap-week-label {
+  font-size: .82rem;
+  font-weight: 600;
+  color: var(--color-text);
+  text-align: center;
+  flex: 1;
+}
+
+.heatmap-container {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin-bottom: .5rem;
+}
+
+/* Grille CSS pour la heatmap */
+.heatmap-grid {
+  display: grid;
+  grid-template-columns: 70px repeat(17, 1fr);
+  gap: 2px;
+  min-width: 420px;
+}
+
+.heatmap-corner {
+  /* Cellule vide coin supérieur gauche */
+}
+.heatmap-hour-label {
+  font-size: .6rem;
+  color: var(--color-text-light);
+  text-align: center;
+  padding: 2px 0;
+  font-weight: 600;
+}
+.heatmap-day-label {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding-right: .4rem;
+}
+.heatmap-day-short {
+  font-size: .75rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+.heatmap-day-date {
+  font-size: .6rem;
+  color: var(--color-text-light);
+}
+
+.heatmap-cell {
+  aspect-ratio: 1;
+  border-radius: 3px;
+  min-height: 18px;
+  transition: transform .1s, box-shadow .1s;
+}
+.heatmap-cell-active {
+  cursor: pointer;
+}
+.heatmap-cell-active:hover {
+  transform: scale(1.3);
+  box-shadow: 0 2px 6px rgba(0,0,0,.2);
+  z-index: 10;
+  position: relative;
+}
+
+/* Tooltip heatmap */
+.heatmap-tooltip {
+  position: fixed;
+  display: none;
+  background: var(--color-text);
+  color: #fff;
+  padding: .5rem .7rem;
+  border-radius: 8px;
+  font-size: .75rem;
+  line-height: 1.4;
+  white-space: pre-line;
+  pointer-events: none;
+  z-index: 500;
+  transform: translate(-50%, -100%);
+  box-shadow: 0 4px 12px rgba(0,0,0,.25);
+  max-width: 200px;
+}
+
+/* Légende heatmap */
+.heatmap-legend {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: .3rem;
+  font-size: .7rem;
+  color: var(--color-text-light);
+}
+.heatmap-legend-cell {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid rgba(0,0,0,.06);
+}
+.heatmap-legend-label {
+  font-weight: 600;
+}
+
+/* ---------- Graphique qualité ---------- */
+.quality-chart-container {
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
+}
+.quality-chart-container canvas {
+  max-width: 100%;
+}
+
+/* ---------- Insights / Patterns ---------- */
+.insight-card {
+  background: var(--color-bg);
+  border-radius: var(--radius);
+  padding: 1rem;
+  border-left: 4px solid var(--color-primary);
+}
+.insight-card.insight-info {
+  border-left-color: var(--color-secondary);
+}
+.insight-title {
+  font-size: .9rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  margin-bottom: .5rem;
+}
+.insight-text {
+  font-size: .85rem;
+  color: var(--color-text);
+  line-height: 1.5;
+  margin-bottom: .5rem;
+}
+.insight-text:last-of-type {
+  margin-bottom: .75rem;
+}
+.insight-progress {
+  font-size: .78rem;
+  color: var(--color-text-light);
+  font-weight: 600;
+  margin-top: .25rem;
+}
+
+.btn-adjust-suggestion {
+  width: 100%;
+  margin-top: .5rem;
+  font-size: .82rem;
+}
+
 /* ---------- Responsive > 600px ---------- */
 @media (min-width: 600px) {
   main { padding: 1.5rem; }
   .timer-display { width: 260px; height: 260px; }
   .timer-digits { font-size: 3.2rem; }
   .modal-box { max-width: 460px; }
+  .nav-tab { font-size: .9rem; padding: .7rem 1rem; }
+  .stats-cards { grid-template-columns: 1fr 1fr 1fr; }
+  .stats-cards .stat-card:last-child { grid-column: auto; }
+  .heatmap-grid { min-width: auto; }
+  .quality-star .star-svg { width: 42px; height: 42px; }
 }
