@@ -1,11 +1,13 @@
-// Service Worker — Study Protocol Manager
+// Service Worker — Study Protocol Manager (v2)
 // Permet le fonctionnement hors-ligne après la première visite.
+// Version 2 : ajout de db.js au cache.
 
-const CACHE_NAME = 'study-proto-v1';
+const CACHE_NAME = 'study-proto-v2';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
+  './db.js',
   './app.js',
   './manifest.json',
   './icons/icon-192.png',

@@ -19,85 +19,155 @@
     <p class="app-date" id="currentDate"></p>
   </header>
 
+  <!-- ====== NAVIGATION PAR ONGLETS ====== -->
+  <nav class="app-nav" id="appNav">
+    <button class="nav-tab active" data-tab="main" type="button">Contrat</button>
+    <button class="nav-tab" data-tab="history" type="button">Historique</button>
+  </nav>
+
   <main id="app">
 
-    <!-- ====== VUE 1 : CRÉATION DU CONTRAT ====== -->
-    <section id="viewContract" class="view">
-      <h2 class="section-title">Ma mission du jour</h2>
-      <p class="section-hint">Choisis entre 3 et 5 tâches pour ta journée. Pas plus&nbsp;: mieux vaut finir peu que commencer beaucoup.</p>
+    <!-- ====== ZONE PRINCIPALE (contrat + timer) ====== -->
+    <div id="tabMain">
 
-      <div id="taskList" class="task-list">
-        <!-- Les formulaires de tâches sont générés par JS -->
-      </div>
+      <!-- ====== VUE 1 : CRÉATION DU CONTRAT ====== -->
+      <section id="viewContract" class="view">
+        <h2 class="section-title">Ma mission du jour</h2>
+        <p class="section-hint">Choisis entre 3 et 5 tâches pour ta journée. Pas plus&nbsp;: mieux vaut finir peu que commencer beaucoup.</p>
 
-      <div class="task-actions">
-        <button id="btnAddTask" class="btn btn-secondary" type="button">+ Ajouter une tâche</button>
-      </div>
+        <div id="taskList" class="task-list">
+          <!-- Les formulaires de tâches sont générés par JS -->
+        </div>
 
-      <!-- Exemple pré-rempli -->
-      <details class="demo-hint">
-        <summary>Voir un exemple de contrat</summary>
-        <ul>
-          <li><strong>Résumé chapitre 4</strong> — Français — 25 min — Moyen</li>
-          <li><strong>Exercices équations</strong> — Maths — 50 min — Difficile</li>
-          <li><strong>Relire notes cours</strong> — Sciences — 25 min — Facile</li>
+        <div class="task-actions">
+          <button id="btnAddTask" class="btn btn-secondary" type="button">+ Ajouter une tâche</button>
+        </div>
+
+        <!-- Exemple pré-rempli -->
+        <details class="demo-hint">
+          <summary>Voir un exemple de contrat</summary>
+          <ul>
+            <li><strong>Résumé chapitre 4</strong> — Français — 25 min — Moyen</li>
+            <li><strong>Exercices équations</strong> — Maths — 50 min — Difficile</li>
+            <li><strong>Relire notes cours</strong> — Sciences — 25 min — Facile</li>
+          </ul>
+          <button id="btnLoadDemo" class="btn btn-link" type="button">Charger cet exemple</button>
+        </details>
+
+        <button id="btnLockContract" class="btn btn-primary btn-lock" type="button" disabled>
+          Démarrer ma journée
+        </button>
+      </section>
+
+      <!-- ====== VUE 2 : CONTRAT VERROUILLÉ ====== -->
+      <section id="viewLocked" class="view hidden">
+        <h2 class="section-title">Mon contrat du jour</h2>
+
+        <div class="progress-summary" id="progressSummary">
+          <!-- Progression globale -->
+        </div>
+
+        <ul id="lockedTaskList" class="locked-list">
+          <!-- Tâches verrouillées générées par JS -->
         </ul>
-        <button id="btnLoadDemo" class="btn btn-link" type="button">Charger cet exemple</button>
-      </details>
 
-      <button id="btnLockContract" class="btn btn-primary btn-lock" type="button" disabled>
-        Démarrer ma journée
-      </button>
-    </section>
+        <button id="btnResetDay" class="btn btn-secondary btn-reset" type="button">Nouvelle journée</button>
+      </section>
 
-    <!-- ====== VUE 2 : CONTRAT VERROUILLÉ ====== -->
-    <section id="viewLocked" class="view hidden">
-      <h2 class="section-title">Mon contrat du jour</h2>
+      <!-- ====== VUE 3 : TIMER DE SESSION ====== -->
+      <section id="viewTimer" class="view hidden">
+        <button id="btnBackToList" class="btn btn-link btn-back" type="button">&larr; Retour au contrat</button>
 
-      <div class="progress-summary" id="progressSummary">
-        <!-- Progression globale -->
+        <div class="timer-task-name" id="timerTaskName"></div>
+        <div class="timer-subject" id="timerSubject"></div>
+
+        <div class="timer-display">
+          <!-- Barre de progression circulaire (SVG) -->
+          <svg class="timer-ring" viewBox="0 0 200 200">
+            <circle class="timer-ring-bg" cx="100" cy="100" r="90" />
+            <circle class="timer-ring-progress" id="timerRingProgress" cx="100" cy="100" r="90" />
+          </svg>
+          <span class="timer-digits" id="timerDigits">25:00</span>
+        </div>
+
+        <div class="timer-controls">
+          <button id="btnPause" class="btn btn-secondary" type="button">Pause</button>
+          <button id="btnFinish" class="btn btn-primary" type="button">Terminer</button>
+          <button id="btnAbandon" class="btn btn-danger" type="button">Abandonner</button>
+        </div>
+
+        <label class="sound-toggle">
+          <input type="checkbox" id="chkSound" checked>
+          Son à la fin de la session
+        </label>
+
+        <!-- Suggestion de pause -->
+        <div id="breakSuggestion" class="break-suggestion hidden">
+          <p>Session terminée. Prends une pause de <strong id="breakDuration"></strong> minutes pour recharger.</p>
+          <button id="btnDismissBreak" class="btn btn-secondary" type="button">Compris</button>
+        </div>
+      </section>
+
+    </div><!-- /tabMain -->
+
+    <!-- ====== VUE HISTORIQUE ====== -->
+    <div id="tabHistory" class="hidden">
+      <section class="view">
+        <h2 class="section-title">Historique des sessions</h2>
+        <p class="section-hint">Tes 20 dernières sessions de travail.</p>
+
+        <div id="historyList" class="history-list">
+          <!-- Généré par JS -->
+        </div>
+
+        <div id="historyEmpty" class="history-empty hidden">
+          <p>Aucune session enregistrée pour le moment.</p>
+        </div>
+
+        <button id="btnExportCSV" class="btn btn-secondary btn-export" type="button">
+          Exporter en CSV
+        </button>
+      </section>
+    </div><!-- /tabHistory -->
+
+    <!-- ====== MODAL : TEST DE RÉCUPÉRATION ACTIVE ====== -->
+    <div id="recallModal" class="modal-overlay hidden">
+      <div class="modal-box">
+        <h3 class="modal-title">Qu'as-tu retenu ?</h3>
+        <p class="modal-hint">Pour mieux mémoriser, résume en quelques phrases ce que tu viens d'étudier.</p>
+
+        <textarea
+          id="recallTextarea"
+          class="recall-textarea"
+          placeholder="Écris ici ce que tu as retenu de cette session... (minimum 50 caractères)"
+          rows="5"
+        ></textarea>
+
+        <div class="recall-counter">
+          <span id="recallCharCount">0</span> / 50 caractères minimum
+        </div>
+
+        <div class="modal-actions">
+          <button id="btnRecallSave" class="btn btn-primary" type="button" disabled>
+            Enregistrer mon résumé
+          </button>
+          <button id="btnRecallSkip" class="btn btn-link" type="button">
+            Passer pour cette fois
+          </button>
+        </div>
       </div>
+    </div>
 
-      <ul id="lockedTaskList" class="locked-list">
-        <!-- Tâches verrouillées générées par JS -->
-      </ul>
-
-      <button id="btnResetDay" class="btn btn-secondary btn-reset" type="button">Nouvelle journée</button>
-    </section>
-
-    <!-- ====== VUE 3 : TIMER DE SESSION ====== -->
-    <section id="viewTimer" class="view hidden">
-      <button id="btnBackToList" class="btn btn-link btn-back" type="button">&larr; Retour au contrat</button>
-
-      <div class="timer-task-name" id="timerTaskName"></div>
-      <div class="timer-subject" id="timerSubject"></div>
-
-      <div class="timer-display">
-        <!-- Barre de progression circulaire (SVG) -->
-        <svg class="timer-ring" viewBox="0 0 200 200">
-          <circle class="timer-ring-bg" cx="100" cy="100" r="90" />
-          <circle class="timer-ring-progress" id="timerRingProgress" cx="100" cy="100" r="90" />
-        </svg>
-        <span class="timer-digits" id="timerDigits">25:00</span>
+    <!-- ====== MODAL : DÉTAIL D'UN RÉSUMÉ ====== -->
+    <div id="summaryDetailModal" class="modal-overlay hidden">
+      <div class="modal-box">
+        <h3 class="modal-title" id="summaryDetailTitle">Résumé de session</h3>
+        <p class="summary-detail-text" id="summaryDetailText"></p>
+        <div class="modal-actions">
+          <button id="btnCloseSummaryDetail" class="btn btn-secondary" type="button">Fermer</button>
+        </div>
       </div>
-
-      <div class="timer-controls">
-        <button id="btnPause" class="btn btn-secondary" type="button">Pause</button>
-        <button id="btnFinish" class="btn btn-primary" type="button">Terminer</button>
-        <button id="btnAbandon" class="btn btn-danger" type="button">Abandonner</button>
-      </div>
-
-      <label class="sound-toggle">
-        <input type="checkbox" id="chkSound" checked>
-        Son à la fin de la session
-      </label>
-
-      <!-- Suggestion de pause -->
-      <div id="breakSuggestion" class="break-suggestion hidden">
-        <p>Session terminée. Prends une pause de <strong id="breakDuration"></strong> minutes pour recharger.</p>
-        <button id="btnDismissBreak" class="btn btn-secondary" type="button">Compris</button>
-      </div>
-    </section>
+    </div>
 
     <!-- ====== DIALOGUE DE CONFIRMATION ====== -->
     <div id="confirmDialog" class="dialog-overlay hidden">
@@ -110,8 +180,13 @@
       </div>
     </div>
 
+    <!-- ====== TOAST / NOTIFICATION DISCRÈTE ====== -->
+    <div id="toast" class="toast hidden" aria-live="polite"></div>
+
   </main>
 
+  <!-- Scripts : db.js doit être chargé avant app.js -->
+  <script src="db.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
