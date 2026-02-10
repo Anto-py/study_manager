@@ -1,6 +1,12 @@
 // ============================================================
-// Study Protocol Manager — Logique applicative
-// Persistance via localStorage, aucun backend requis.
+// Study Protocol Manager — Logique applicative (étape 2)
+// Persistance via IndexedDB (module db.js), fallback localStorage.
+// Nouvelles fonctionnalités :
+//   - Test de récupération active après chaque session
+//   - Historique des sessions avec export CSV
+//   - Indicateurs visuels de statut (vert/jaune/gris)
+//   - Toast de notification
+//   - Récupération de session interrompue (refresh page)
 // ============================================================
 
 (function () {
@@ -10,59 +16,107 @@
   const MAX_TASKS = 5;
   const MIN_TASKS = 3;
   const DIFFICULTY_LABELS = ['', 'Facile', 'Moyen', 'Difficile'];
-  const STORAGE_KEY = 'studyproto_contract';
+  const MIN_RECALL_CHARS = 50; // minimum de caractères pour le résumé
 
   // Périmètre du cercle SVG (2 * PI * rayon 90)
   const RING_CIRCUMFERENCE = 2 * Math.PI * 90;
+
+  // Clé pour sauvegarder l'état du timer en cas de refresh
+  const TIMER_STATE_KEY = 'studyproto_timer_state';
 
   // ---- Références DOM ----
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => document.querySelectorAll(sel);
 
+  // Onglets de navigation
+  const appNav      = $('#appNav');
+  const tabMain     = $('#tabMain');
+  const tabHistory  = $('#tabHistory');
+
+  // Vues principales
   const viewContract = $('#viewContract');
   const viewLocked   = $('#viewLocked');
   const viewTimer    = $('#viewTimer');
 
+  // Formulaire de contrat
   const taskListEl      = $('#taskList');
   const btnAddTask      = $('#btnAddTask');
   const btnLockContract = $('#btnLockContract');
   const btnLoadDemo     = $('#btnLoadDemo');
 
+  // Vue verrouillée
   const progressSummary = $('#progressSummary');
   const lockedTaskList  = $('#lockedTaskList');
   const btnResetDay     = $('#btnResetDay');
 
-  const timerTaskName    = $('#timerTaskName');
-  const timerSubject     = $('#timerSubject');
-  const timerDigits      = $('#timerDigits');
+  // Timer
+  const timerTaskName     = $('#timerTaskName');
+  const timerSubject      = $('#timerSubject');
+  const timerDigits       = $('#timerDigits');
   const timerRingProgress = $('#timerRingProgress');
-  const btnPause         = $('#btnPause');
-  const btnFinish        = $('#btnFinish');
-  const btnAbandon       = $('#btnAbandon');
-  const btnBackToList    = $('#btnBackToList');
-  const chkSound         = $('#chkSound');
-  const breakSuggestion  = $('#breakSuggestion');
-  const breakDuration    = $('#breakDuration');
-  const btnDismissBreak  = $('#btnDismissBreak');
+  const btnPause          = $('#btnPause');
+  const btnFinish         = $('#btnFinish');
+  const btnAbandon        = $('#btnAbandon');
+  const btnBackToList     = $('#btnBackToList');
+  const chkSound          = $('#chkSound');
+  const breakSuggestion   = $('#breakSuggestion');
+  const breakDuration     = $('#breakDuration');
+  const btnDismissBreak   = $('#btnDismissBreak');
 
+  // Dialogue de confirmation
   const confirmDialog  = $('#confirmDialog');
   const confirmMessage = $('#confirmMessage');
   const btnConfirmYes  = $('#btnConfirmYes');
   const btnConfirmNo   = $('#btnConfirmNo');
 
+  // Modal récupération active
+  const recallModal     = $('#recallModal');
+  const recallTextarea  = $('#recallTextarea');
+  const recallCharCount = $('#recallCharCount');
+  const btnRecallSave   = $('#btnRecallSave');
+  const btnRecallSkip   = $('#btnRecallSkip');
+
+  // Modal détail résumé
+  const summaryDetailModal = $('#summaryDetailModal');
+  const summaryDetailTitle = $('#summaryDetailTitle');
+  const summaryDetailText  = $('#summaryDetailText');
+  const btnCloseSummaryDetail = $('#btnCloseSummaryDetail');
+
+  // Historique
+  const historyList  = $('#historyList');
+  const historyEmpty = $('#historyEmpty');
+  const btnExportCSV = $('#btnExportCSV');
+
+  // Toast
+  const toastEl = $('#toast');
+
   // ---- État applicatif ----
-  let contract = null;         // { date, locked, tasks: [...] }
+  let contract = null;         // { id?, date, locked, tasks: [...] }
   let timerInterval = null;
   let timerRemaining = 0;      // secondes restantes
-  let timerTotal = 0;          // durée totale en secondes
+  let timerTotal = 0;           // durée totale en secondes
   let timerPaused = false;
   let currentTaskIndex = -1;
-  let confirmCallback = null;  // fonction appelée si l'utilisateur confirme
+  let confirmCallback = null;   // fonction appelée si l'utilisateur confirme
+  let timerStartTime = null;    // timestamp de début de session (pour calcul durée réelle)
+  let timerPausedTotal = 0;     // temps total en pause (en ms)
+  let timerPauseStart = null;   // timestamp du début de la pause en cours
+  let recallCallback = null;    // callback à appeler après le modal de récupération active
+  let activeTab = 'main';      // onglet actif : 'main' ou 'history'
 
   // ---- Initialisation ----
-  function init() {
+  async function init() {
     afficherDate();
-    chargerContrat();
+
+    // Initialiser IndexedDB (migration automatique)
+    await StudyDB.init();
+
+    // Charger le contrat du jour
+    await chargerContrat();
+
+    // Vérifier s'il y a une session interrompue à restaurer
+    restaurerSessionInterrompue();
+
     attacherEvenements();
     enregistrerServiceWorker();
   }
@@ -73,31 +127,24 @@
     $('#currentDate').textContent = new Date().toLocaleDateString('fr-BE', options);
   }
 
-  // ---- Persistance localStorage ----
+  // ---- Persistance IndexedDB (via module StudyDB) ----
 
-  function sauvegarderContrat() {
-    if (contract) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(contract));
-    }
+  async function sauvegarderContrat() {
+    if (!contract) return;
+    await StudyDB.sauvegarderContrat(contract);
   }
 
-  function chargerContrat() {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      try {
-        contract = JSON.parse(raw);
-      } catch (_) {
-        contract = null;
-      }
-    }
-
-    // Vérifier que le contrat date d'aujourd'hui
+  async function chargerContrat() {
     const today = new Date().toISOString().slice(0, 10);
-    if (contract && contract.date === today && contract.locked) {
-      afficherVueVerrouillee();
-    } else if (contract && contract.date === today && !contract.locked) {
-      // Contrat en cours d'édition, le restaurer
-      restaurerFormulaire();
+    const saved = await StudyDB.getContratParDate(today);
+
+    if (saved) {
+      contract = saved;
+      if (contract.locked) {
+        afficherVueVerrouillee();
+      } else {
+        restaurerFormulaire();
+      }
     } else {
       // Nouveau jour ou pas de contrat : formulaire vierge
       contract = null;
@@ -105,9 +152,82 @@
     }
   }
 
+  // ---- Sauvegarde / restauration de session interrompue ----
+
+  /** Sauvegarde l'état du timer pour récupération en cas de refresh */
+  function sauvegarderEtatTimer() {
+    if (currentTaskIndex < 0) return;
+    const state = {
+      taskIndex: currentTaskIndex,
+      remaining: timerRemaining,
+      total: timerTotal,
+      paused: timerPaused,
+      startTime: timerStartTime,
+      pausedTotal: timerPausedTotal,
+      pauseStart: timerPauseStart,
+      timestamp: Date.now()
+    };
+    localStorage.setItem(TIMER_STATE_KEY, JSON.stringify(state));
+  }
+
+  /** Supprime l'état de timer sauvegardé */
+  function effacerEtatTimer() {
+    localStorage.removeItem(TIMER_STATE_KEY);
+  }
+
+  /** Restaure une session si la page a été rafraîchie pendant le timer */
+  function restaurerSessionInterrompue() {
+    const raw = localStorage.getItem(TIMER_STATE_KEY);
+    if (!raw || !contract || !contract.locked) {
+      effacerEtatTimer();
+      return;
+    }
+
+    try {
+      const state = JSON.parse(raw);
+      const elapsed = Math.floor((Date.now() - state.timestamp) / 1000);
+
+      // Si plus de 5 minutes se sont écoulées, la session est considérée abandonnée
+      if (elapsed > 300) {
+        effacerEtatTimer();
+        return;
+      }
+
+      // Vérifier que la tâche existe et n'est pas déjà terminée
+      if (!contract.tasks[state.taskIndex] || contract.tasks[state.taskIndex].done) {
+        effacerEtatTimer();
+        return;
+      }
+
+      // Restaurer le timer avec le temps écoulé déduit
+      currentTaskIndex = state.taskIndex;
+      const task = contract.tasks[currentTaskIndex];
+
+      timerTaskName.textContent = task.name;
+      timerSubject.textContent = task.subject || '';
+      timerTotal = state.total;
+      timerRemaining = Math.max(0, state.remaining - elapsed);
+      timerPaused = true; // Reprendre en pause pour laisser l'utilisateur choisir
+      timerStartTime = state.startTime;
+      timerPausedTotal = state.pausedTotal + (Date.now() - state.timestamp);
+      timerPauseStart = Date.now();
+
+      btnPause.textContent = 'Reprendre';
+      breakSuggestion.classList.add('hidden');
+      mettreAJourAffichageTimer();
+      afficherVue('viewTimer');
+
+      // Démarrer le compte à rebours (en pause)
+      demarrerCompteARebours();
+
+      afficherToast('Session restaurée — en pause');
+    } catch (_) {
+      effacerEtatTimer();
+    }
+  }
+
   // ---- Formulaire de création du contrat ----
 
-  // Crée le formulaire avec un nombre initial de tâches
   function creerFormulaireInitial() {
     taskListEl.innerHTML = '';
     for (let i = 0; i < MIN_TASKS; i++) {
@@ -117,7 +237,6 @@
     afficherVue('viewContract');
   }
 
-  // Restaure le formulaire depuis un contrat non verrouillé
   function restaurerFormulaire() {
     taskListEl.innerHTML = '';
     contract.tasks.forEach((t) => {
@@ -127,7 +246,6 @@
     afficherVue('viewContract');
   }
 
-  // Génère le HTML d'une carte de tâche
   function ajouterCarteTache(data) {
     const index = taskListEl.children.length;
     const card = document.createElement('div');
@@ -188,7 +306,6 @@
     card.querySelector('.input-name').addEventListener('input', mettreAJourBoutons);
   }
 
-  // Remet à jour les numéros « Tâche 1, Tâche 2… » après suppression
   function renumeroterCartes() {
     const cards = taskListEl.querySelectorAll('.task-card');
     cards.forEach((c, i) => {
@@ -197,12 +314,10 @@
     });
   }
 
-  // Active ou désactive les boutons selon le nombre de tâches et la validité
   function mettreAJourBoutons() {
     const count = taskListEl.children.length;
     btnAddTask.disabled = count >= MAX_TASKS;
 
-    // Le bouton « Démarrer » est actif si ≥ MIN_TASKS tâches ont un nom
     const names = Array.from(taskListEl.querySelectorAll('.input-name'));
     const filledCount = names.filter((n) => n.value.trim().length > 0).length;
     btnLockContract.disabled = filledCount < MIN_TASKS;
@@ -215,13 +330,15 @@
     const tasks = [];
     cards.forEach((c) => {
       const name = c.querySelector('.input-name').value.trim();
-      if (!name) return; // ignorer les tâches vides
+      if (!name) return;
       tasks.push({
         name: name,
         subject: c.querySelector('.input-subject').value.trim(),
         duration: parseInt(c.querySelector('.input-duration').value, 10),
         difficulty: parseInt(c.querySelector('.input-difficulty').value, 10),
-        done: false
+        done: false,
+        // Étape 2 : champs supplémentaires pour le suivi
+        sessionStatus: null // null = pas commencé, 'with-summary' = terminé avec résumé, 'without-summary' = terminé sans résumé
       });
     });
     return tasks;
@@ -229,7 +346,7 @@
 
   // ---- Verrouillage du contrat ----
 
-  function verrouillerContrat() {
+  async function verrouillerContrat() {
     const tasks = lireTachesFormulaire();
     if (tasks.length < MIN_TASKS) return;
 
@@ -238,7 +355,7 @@
       locked: true,
       tasks: tasks
     };
-    sauvegarderContrat();
+    await sauvegarderContrat();
     afficherVueVerrouillee();
   }
 
@@ -267,12 +384,39 @@
     lockedTaskList.innerHTML = '';
     contract.tasks.forEach((task, idx) => {
       const li = document.createElement('li');
-      li.className = 'locked-item' + (task.done ? ' done' : '');
+
+      // Déterminer la classe de statut visuel
+      let statusClass = '';
+      if (task.done && task.sessionStatus === 'with-summary') {
+        statusClass = ' done status-with-summary';
+      } else if (task.done && task.sessionStatus === 'without-summary') {
+        statusClass = ' done status-without-summary';
+      } else if (task.done) {
+        // Compatibilité avec les anciennes données sans sessionStatus
+        statusClass = ' done';
+      }
+
+      li.className = 'locked-item' + statusClass;
+
       const diffText = DIFFICULTY_LABELS[task.difficulty] || '';
+
+      // Indicateur visuel de statut
+      let statusIndicator = '';
+      if (task.done && task.sessionStatus === 'with-summary') {
+        statusIndicator = '<span class="status-dot status-dot-green" title="Terminé avec résumé"></span>';
+      } else if (task.done && task.sessionStatus === 'without-summary') {
+        statusIndicator = '<span class="status-dot status-dot-yellow" title="Terminé sans résumé"></span>';
+      } else if (!task.done) {
+        statusIndicator = '<span class="status-dot status-dot-grey" title="Pas encore commencé"></span>';
+      } else {
+        // Ancien format (done=true mais pas de sessionStatus)
+        statusIndicator = '<span class="status-dot status-dot-green" title="Terminé"></span>';
+      }
+
       li.innerHTML = `
         <span class="locked-item-check">${task.done ? '&#10003;' : ''}</span>
         <div class="locked-item-body">
-          <div class="locked-item-name">${escapeHtml(task.name)}</div>
+          <div class="locked-item-name">${statusIndicator} ${escapeHtml(task.name)}</div>
           <div class="locked-item-meta">
             ${task.subject ? escapeHtml(task.subject) + ' — ' : ''}${task.duration} min — ${diffText}
           </div>
@@ -305,6 +449,9 @@
     timerTotal = task.duration * 60;
     timerRemaining = timerTotal;
     timerPaused = false;
+    timerStartTime = Date.now();
+    timerPausedTotal = 0;
+    timerPauseStart = null;
 
     btnPause.textContent = 'Pause';
     breakSuggestion.classList.add('hidden');
@@ -322,69 +469,138 @@
       timerRemaining--;
       mettreAJourAffichageTimer();
 
+      // Sauvegarder l'état périodiquement (toutes les 5 secondes)
+      if (timerRemaining % 5 === 0) {
+        sauvegarderEtatTimer();
+      }
+
       if (timerRemaining <= 0) {
         clearInterval(timerInterval);
         timerInterval = null;
+        effacerEtatTimer();
         finDeSession();
       }
     }, 1000);
   }
 
   function mettreAJourAffichageTimer() {
-    // Affichage MM:SS
     const min = Math.floor(Math.max(0, timerRemaining) / 60);
     const sec = Math.max(0, timerRemaining) % 60;
     timerDigits.textContent =
       String(min).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
 
-    // Barre de progression circulaire
     const progress = timerTotal > 0 ? timerRemaining / timerTotal : 1;
     const offset = RING_CIRCUMFERENCE * (1 - progress);
     timerRingProgress.style.strokeDasharray = RING_CIRCUMFERENCE;
     timerRingProgress.style.strokeDashoffset = offset;
   }
 
+  /** Calcule la durée réelle passée en minutes (sans les pauses) */
+  function calculerDureeReelle() {
+    if (!timerStartTime) return 0;
+    let pauseMs = timerPausedTotal;
+    // Si actuellement en pause, ajouter le temps de pause en cours
+    if (timerPaused && timerPauseStart) {
+      pauseMs += Date.now() - timerPauseStart;
+    }
+    const totalMs = Date.now() - timerStartTime - pauseMs;
+    return Math.max(0, Math.round(totalMs / 60000));
+  }
+
   function finDeSession() {
-    // Jouer un son doux si activé
     if (chkSound.checked) {
       jouerSonFin();
     }
 
-    // Marquer la tâche comme accomplie
-    marquerTacheAccomplie();
-
-    // Suggérer une pause
-    const task = contract.tasks[currentTaskIndex];
-    breakDuration.textContent = task.duration === 50 ? '10' : '5';
-    breakSuggestion.classList.remove('hidden');
+    // Marquer la tâche et ouvrir le modal de récupération active
+    marquerTacheAccomplieEtRecall();
   }
 
-  function marquerTacheAccomplie() {
-    if (currentTaskIndex >= 0 && contract.tasks[currentTaskIndex]) {
-      contract.tasks[currentTaskIndex].done = true;
+  /** Marque la tâche comme accomplie puis affiche le modal de récupération active */
+  function marquerTacheAccomplieEtRecall() {
+    if (currentTaskIndex < 0 || !contract.tasks[currentTaskIndex]) return;
+
+    const task = contract.tasks[currentTaskIndex];
+    const dureeReelle = calculerDureeReelle();
+
+    // Afficher le modal de récupération active
+    ouvrirRecallModal((summary, skipped) => {
+      // Mettre à jour le statut de la tâche
+      task.done = true;
+      task.sessionStatus = skipped ? 'without-summary' : 'with-summary';
       sauvegarderContrat();
-    }
+
+      // Enregistrer la session dans IndexedDB
+      const sessionData = {
+        taskName: task.name,
+        subject: task.subject || '',
+        date: Date.now(),
+        duration: task.duration,
+        actualDuration: dureeReelle,
+        difficulty: task.difficulty,
+        summary: skipped ? null : summary,
+        completed: true
+      };
+      StudyDB.enregistrerSession(sessionData);
+
+      // Suggestion de pause
+      breakDuration.textContent = task.duration === 50 ? '10' : '5';
+      breakSuggestion.classList.remove('hidden');
+
+      afficherToast('Session enregistrée');
+    });
+  }
+
+  /** Ouvre le modal de récupération active. Le callback reçoit (summary, skipped). */
+  function ouvrirRecallModal(callback) {
+    recallCallback = callback;
+    recallTextarea.value = '';
+    recallCharCount.textContent = '0';
+    btnRecallSave.disabled = true;
+    recallModal.classList.remove('hidden');
+    recallTextarea.focus();
+  }
+
+  function fermerRecallModal() {
+    recallModal.classList.add('hidden');
+    recallCallback = null;
   }
 
   function togglePause() {
     timerPaused = !timerPaused;
-    btnPause.textContent = timerPaused ? 'Reprendre' : 'Pause';
+    if (timerPaused) {
+      // Début de la pause
+      timerPauseStart = Date.now();
+      btnPause.textContent = 'Reprendre';
+    } else {
+      // Fin de la pause
+      if (timerPauseStart) {
+        timerPausedTotal += Date.now() - timerPauseStart;
+        timerPauseStart = null;
+      }
+      btnPause.textContent = 'Pause';
+    }
+    sauvegarderEtatTimer();
   }
 
   function terminerSession() {
     clearInterval(timerInterval);
     timerInterval = null;
-    marquerTacheAccomplie();
-    retourContrat();
+    effacerEtatTimer();
+
+    if (currentTaskIndex >= 0 && contract.tasks[currentTaskIndex]) {
+      marquerTacheAccomplieEtRecall();
+    }
   }
 
   function abandonnerSession() {
     afficherConfirmation(
-      'Es-tu sûr·e de vouloir abandonner cette session\u00a0?',
+      'Es-tu sûr\u00b7e de vouloir abandonner cette session\u00a0?',
       'Oui, abandonner',
       () => {
         clearInterval(timerInterval);
         timerInterval = null;
+        effacerEtatTimer();
         retourContrat();
       }
     );
@@ -392,6 +608,9 @@
 
   function retourContrat() {
     currentTaskIndex = -1;
+    timerStartTime = null;
+    timerPausedTotal = 0;
+    timerPauseStart = null;
     breakSuggestion.classList.add('hidden');
     afficherVueVerrouillee();
   }
@@ -401,7 +620,6 @@
   function jouerSonFin() {
     try {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      // Deux notes douces successives
       [440, 523.25].forEach((freq, i) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
@@ -417,6 +635,151 @@
     } catch (_) {
       // Navigateur ne supporte pas AudioContext, on ignore
     }
+  }
+
+  // ---- Toast / notification discrète ----
+
+  let toastTimeout = null;
+
+  function afficherToast(message) {
+    clearTimeout(toastTimeout);
+    toastEl.textContent = message;
+    toastEl.classList.remove('hidden');
+    toastEl.classList.add('toast-visible');
+
+    toastTimeout = setTimeout(() => {
+      toastEl.classList.remove('toast-visible');
+      toastEl.classList.add('toast-hiding');
+      // Attendre la fin de l'animation avant de cacher
+      setTimeout(() => {
+        toastEl.classList.add('hidden');
+        toastEl.classList.remove('toast-hiding');
+      }, 400);
+    }, 2500);
+  }
+
+  // ---- Historique des sessions ----
+
+  async function afficherHistorique() {
+    const sessions = await StudyDB.getDernieresSessions(20);
+
+    if (sessions.length === 0) {
+      historyList.innerHTML = '';
+      historyEmpty.classList.remove('hidden');
+      return;
+    }
+
+    historyEmpty.classList.add('hidden');
+    historyList.innerHTML = '';
+
+    sessions.forEach((session) => {
+      const card = document.createElement('div');
+      card.className = 'history-card';
+
+      // Formater la date
+      const dateObj = new Date(session.date);
+      const dateStr = dateObj.toLocaleDateString('fr-BE', {
+        day: 'numeric', month: 'short', year: 'numeric'
+      });
+      const timeStr = dateObj.toLocaleTimeString('fr-BE', {
+        hour: '2-digit', minute: '2-digit'
+      });
+
+      // Résumé tronqué (80 caractères max dans la liste)
+      const hasSummary = session.summary && session.summary.length > 0;
+      let summaryPreview = '';
+      if (hasSummary) {
+        const truncated = session.summary.length > 80
+          ? session.summary.substring(0, 80) + '…'
+          : session.summary;
+        summaryPreview = `<p class="history-summary" title="Cliquer pour voir en entier">${escapeHtml(truncated)}</p>`;
+      } else {
+        summaryPreview = '<p class="history-no-summary">Pas de résumé</p>';
+      }
+
+      // Indicateur de statut
+      const statusDot = hasSummary
+        ? '<span class="status-dot status-dot-green"></span>'
+        : '<span class="status-dot status-dot-yellow"></span>';
+
+      card.innerHTML = `
+        <div class="history-card-header">
+          <span class="history-date">${dateStr} à ${timeStr}</span>
+          ${statusDot}
+        </div>
+        <div class="history-card-body">
+          <div class="history-task-name">${escapeHtml(session.taskName)}</div>
+          <div class="history-meta">
+            ${session.subject ? escapeHtml(session.subject) + ' — ' : ''}${session.actualDuration || session.duration} min effective${(session.actualDuration || session.duration) > 1 ? 's' : ''}
+          </div>
+          ${summaryPreview}
+        </div>
+      `;
+
+      // Clic sur le résumé pour voir en entier
+      if (hasSummary) {
+        card.querySelector('.history-summary').addEventListener('click', () => {
+          ouvrirDetailResume(session.taskName, session.summary);
+        });
+      }
+
+      historyList.appendChild(card);
+    });
+  }
+
+  /** Ouvre le modal de détail d'un résumé */
+  function ouvrirDetailResume(taskName, summary) {
+    summaryDetailTitle.textContent = 'Résumé — ' + taskName;
+    summaryDetailText.textContent = summary;
+    summaryDetailModal.classList.remove('hidden');
+  }
+
+  // ---- Export CSV ----
+
+  async function exporterCSV() {
+    const sessions = await StudyDB.getToutesSessions();
+    if (sessions.length === 0) {
+      afficherToast('Aucune session à exporter');
+      return;
+    }
+
+    // En-tête CSV
+    const headers = ['Date', 'Heure', 'Tâche', 'Matière', 'Durée prévue (min)', 'Durée réelle (min)', 'Difficulté', 'Résumé', 'Complété'];
+    const rows = [headers.join(';')];
+
+    sessions.forEach((s) => {
+      const d = new Date(s.date);
+      const dateStr = d.toLocaleDateString('fr-BE');
+      const timeStr = d.toLocaleTimeString('fr-BE', { hour: '2-digit', minute: '2-digit' });
+      const diffLabel = DIFFICULTY_LABELS[s.difficulty] || '';
+      const summaryClean = s.summary ? '"' + s.summary.replace(/"/g, '""') + '"' : '';
+
+      rows.push([
+        dateStr,
+        timeStr,
+        '"' + (s.taskName || '').replace(/"/g, '""') + '"',
+        '"' + (s.subject || '').replace(/"/g, '""') + '"',
+        s.duration,
+        s.actualDuration || '',
+        diffLabel,
+        summaryClean,
+        s.completed ? 'Oui' : 'Non'
+      ].join(';'));
+    });
+
+    // Générer et télécharger le fichier CSV
+    const csvContent = '\uFEFF' + rows.join('\n'); // BOM UTF-8 pour Excel
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'study-sessions-' + new Date().toISOString().slice(0, 10) + '.csv';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    afficherToast('Export CSV téléchargé');
   }
 
   // ---- Dialogue de confirmation ----
@@ -439,8 +802,9 @@
     afficherConfirmation(
       'Commencer une nouvelle journée\u00a0? Le contrat actuel sera effacé.',
       'Oui, recommencer',
-      () => {
-        localStorage.removeItem(STORAGE_KEY);
+      async () => {
+        const today = new Date().toISOString().slice(0, 10);
+        await StudyDB.supprimerContratDuJour(today);
         contract = null;
         creerFormulaireInitial();
       }
@@ -460,11 +824,36 @@
     mettreAJourBoutons();
   }
 
-  // ---- Navigation entre vues ----
+  // ---- Navigation entre vues et onglets ----
 
   function afficherVue(id) {
     [viewContract, viewLocked, viewTimer].forEach((v) => v.classList.add('hidden'));
     document.getElementById(id).classList.remove('hidden');
+
+    // Masquer la navigation quand on est dans le timer
+    if (id === 'viewTimer') {
+      appNav.classList.add('hidden');
+    } else {
+      appNav.classList.remove('hidden');
+    }
+  }
+
+  function changerOnglet(tab) {
+    activeTab = tab;
+
+    // Mettre à jour les classes actives des onglets
+    appNav.querySelectorAll('.nav-tab').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.tab === tab);
+    });
+
+    if (tab === 'main') {
+      tabMain.classList.remove('hidden');
+      tabHistory.classList.add('hidden');
+    } else if (tab === 'history') {
+      tabMain.classList.add('hidden');
+      tabHistory.classList.remove('hidden');
+      afficherHistorique();
+    }
   }
 
   // ---- Utilitaire : échappement HTML ----
@@ -488,6 +877,7 @@
   // ---- Attache des événements ----
 
   function attacherEvenements() {
+    // Formulaire de contrat
     btnAddTask.addEventListener('click', () => {
       if (taskListEl.children.length < MAX_TASKS) {
         ajouterCarteTache();
@@ -505,13 +895,13 @@
     btnAbandon.addEventListener('click', abandonnerSession);
     btnBackToList.addEventListener('click', () => {
       if (timerInterval) {
-        // Timer en cours, demander confirmation
         afficherConfirmation(
           'Quitter la session en cours\u00a0? La tâche ne sera pas marquée comme accomplie.',
           'Oui, quitter',
           () => {
             clearInterval(timerInterval);
             timerInterval = null;
+            effacerEtatTimer();
             retourContrat();
           }
         );
@@ -531,6 +921,62 @@
       fermerConfirmation();
     });
     btnConfirmNo.addEventListener('click', fermerConfirmation);
+
+    // Navigation par onglets
+    appNav.querySelectorAll('.nav-tab').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        changerOnglet(btn.dataset.tab);
+      });
+    });
+
+    // Modal récupération active : compteur de caractères
+    recallTextarea.addEventListener('input', () => {
+      const len = recallTextarea.value.trim().length;
+      recallCharCount.textContent = len;
+      btnRecallSave.disabled = len < MIN_RECALL_CHARS;
+
+      // Indicateur visuel du compteur
+      const counterEl = recallCharCount.parentElement;
+      if (len >= MIN_RECALL_CHARS) {
+        counterEl.classList.add('recall-counter-ok');
+      } else {
+        counterEl.classList.remove('recall-counter-ok');
+      }
+    });
+
+    // Bouton « Enregistrer mon résumé »
+    btnRecallSave.addEventListener('click', () => {
+      const summary = recallTextarea.value.trim();
+      if (summary.length < MIN_RECALL_CHARS) return;
+
+      if (recallCallback) {
+        recallCallback(summary, false);
+      }
+      fermerRecallModal();
+    });
+
+    // Bouton « Passer pour cette fois »
+    btnRecallSkip.addEventListener('click', () => {
+      if (recallCallback) {
+        recallCallback(null, true);
+      }
+      fermerRecallModal();
+    });
+
+    // Modal détail résumé : fermer
+    btnCloseSummaryDetail.addEventListener('click', () => {
+      summaryDetailModal.classList.add('hidden');
+    });
+
+    // Export CSV
+    btnExportCSV.addEventListener('click', exporterCSV);
+
+    // Sauvegarde de l'état du timer avant fermeture/refresh de la page
+    window.addEventListener('beforeunload', () => {
+      if (timerInterval && currentTaskIndex >= 0) {
+        sauvegarderEtatTimer();
+      }
+    });
   }
 
   // ---- Lancement ----
