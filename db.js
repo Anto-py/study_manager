@@ -1,22 +1,29 @@
 // ============================================================
-// Study Protocol Manager — Module IndexedDB
+// Study Protocol Manager — Module IndexedDB (étape 3)
 // Gère la persistance via IndexedDB avec fallback localStorage.
 // Migration automatique des données localStorage existantes.
+//
+// Stores :
+//   - "contracts"       : contrats quotidiens
+//   - "sessions"        : sessions de travail (+ qualityRating, hourOfDay)
+//   - "userPreferences" : préférences chronobiologiques de l'utilisateur
 // ============================================================
 
 /**
  * Module DB exposé globalement via window.StudyDB
- * Deux stores :
- *   - "contracts" : contrats quotidiens (id auto, date, tasks)
- *   - "sessions"  : sessions de travail (id auto, taskName, subject, etc.)
+ *
+ * Version 2 du schéma :
+ *   - Ajout du champ hourOfDay (index) et qualityRating aux sessions
+ *   - Nouveau store "userPreferences" pour les préférences horaires
  */
 const StudyDB = (function () {
   'use strict';
 
   const DB_NAME = 'StudyProtocolDB';
-  const DB_VERSION = 1;
+  const DB_VERSION = 2; // v2 : ajout userPreferences + index hourOfDay
   const STORE_CONTRACTS = 'contracts';
   const STORE_SESSIONS = 'sessions';
+  const STORE_PREFS = 'userPreferences';
   const LEGACY_KEY = 'studyproto_contract';
 
   let db = null; // référence à la base IDBDatabase
@@ -40,27 +47,48 @@ const StudyDB = (function () {
       // Création ou mise à jour du schéma
       request.onupgradeneeded = (event) => {
         const database = event.target.result;
+        const oldVersion = event.oldVersion;
 
-        // Store "contracts" — un contrat par jour
-        if (!database.objectStoreNames.contains(STORE_CONTRACTS)) {
-          const contractStore = database.createObjectStore(STORE_CONTRACTS, {
-            keyPath: 'id',
-            autoIncrement: true
-          });
-          // Index pour rechercher par date (YYYY-MM-DD)
-          contractStore.createIndex('date', 'date', { unique: false });
+        // ---- Version 0 → 1 : stores initiaux ----
+        if (oldVersion < 1) {
+          // Store "contracts" — un contrat par jour
+          if (!database.objectStoreNames.contains(STORE_CONTRACTS)) {
+            const contractStore = database.createObjectStore(STORE_CONTRACTS, {
+              keyPath: 'id',
+              autoIncrement: true
+            });
+            contractStore.createIndex('date', 'date', { unique: false });
+          }
+
+          // Store "sessions" — chaque session de travail
+          if (!database.objectStoreNames.contains(STORE_SESSIONS)) {
+            const sessionStore = database.createObjectStore(STORE_SESSIONS, {
+              keyPath: 'id',
+              autoIncrement: true
+            });
+            sessionStore.createIndex('date', 'date', { unique: false });
+            sessionStore.createIndex('taskName', 'taskName', { unique: false });
+          }
         }
 
-        // Store "sessions" — chaque session de travail
-        if (!database.objectStoreNames.contains(STORE_SESSIONS)) {
-          const sessionStore = database.createObjectStore(STORE_SESSIONS, {
-            keyPath: 'id',
-            autoIncrement: true
-          });
-          // Index pour rechercher par date
-          sessionStore.createIndex('date', 'date', { unique: false });
-          // Index pour rechercher par nom de tâche
-          sessionStore.createIndex('taskName', 'taskName', { unique: false });
+        // ---- Version 1 → 2 : ajout userPreferences + index hourOfDay ----
+        if (oldVersion < 2) {
+          // Ajout de l'index hourOfDay au store sessions existant
+          const tx = event.target.transaction;
+          if (database.objectStoreNames.contains(STORE_SESSIONS)) {
+            const sessionStore = tx.objectStore(STORE_SESSIONS);
+            if (!sessionStore.indexNames.contains('hourOfDay')) {
+              sessionStore.createIndex('hourOfDay', 'hourOfDay', { unique: false });
+            }
+          }
+
+          // Nouveau store "userPreferences"
+          if (!database.objectStoreNames.contains(STORE_PREFS)) {
+            database.createObjectStore(STORE_PREFS, {
+              keyPath: 'id',
+              autoIncrement: true
+            });
+          }
         }
       };
 
@@ -96,7 +124,6 @@ const StudyDB = (function () {
       // Vérifier si ce contrat existe déjà dans IndexedDB
       const existant = await getContratParDate(data.date);
       if (!existant) {
-        // Insérer le contrat migré
         await sauvegarderContrat({
           date: data.date,
           locked: data.locked || false,
@@ -118,7 +145,6 @@ const StudyDB = (function () {
   function execTransaction(storeName, mode, callback) {
     return new Promise((resolve, reject) => {
       if (!db) {
-        // Fallback localStorage si IndexedDB indisponible
         reject(new Error('IndexedDB non disponible'));
         return;
       }
@@ -141,7 +167,6 @@ const StudyDB = (function () {
   /** Sauvegarde un contrat (ajout ou mise à jour) */
   function sauvegarderContrat(contrat) {
     if (!db) {
-      // Fallback localStorage
       localStorage.setItem(LEGACY_KEY, JSON.stringify(contrat));
       return Promise.resolve();
     }
@@ -153,7 +178,6 @@ const StudyDB = (function () {
   /** Récupère un contrat par sa date (YYYY-MM-DD) */
   function getContratParDate(date) {
     if (!db) {
-      // Fallback localStorage
       const raw = localStorage.getItem(LEGACY_KEY);
       if (!raw) return Promise.resolve(null);
       try {
@@ -172,7 +196,6 @@ const StudyDB = (function () {
 
       request.onsuccess = () => {
         const results = request.result;
-        // Retourne le dernier contrat pour cette date (le plus récent)
         resolve(results.length > 0 ? results[results.length - 1] : null);
       };
       request.onerror = () => reject(request.error);
@@ -206,9 +229,8 @@ const StudyDB = (function () {
   /** Enregistre une session de travail */
   function enregistrerSession(session) {
     if (!db) {
-      // Fallback : stocker dans localStorage sous une clé dédiée
       const sessions = JSON.parse(localStorage.getItem('studyproto_sessions') || '[]');
-      session.id = Date.now(); // identifiant simple
+      session.id = Date.now();
       sessions.push(session);
       localStorage.setItem('studyproto_sessions', JSON.stringify(sessions));
       return Promise.resolve(session.id);
@@ -224,7 +246,6 @@ const StudyDB = (function () {
     limit = limit || 20;
 
     if (!db) {
-      // Fallback localStorage
       const sessions = JSON.parse(localStorage.getItem('studyproto_sessions') || '[]');
       sessions.sort((a, b) => b.date - a.date);
       return Promise.resolve(sessions.slice(0, limit));
@@ -235,7 +256,6 @@ const StudyDB = (function () {
       const store = tx.objectStore(STORE_SESSIONS);
       const results = [];
 
-      // Curseur inversé pour obtenir les plus récentes d'abord
       const request = store.openCursor(null, 'prev');
       request.onsuccess = (event) => {
         const cursor = event.target.result;
@@ -265,11 +285,78 @@ const StudyDB = (function () {
 
       request.onsuccess = () => {
         const results = request.result;
-        // Trier par date décroissante
         results.sort((a, b) => b.date - a.date);
         resolve(results);
       };
       request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * Récupère les sessions dans une période donnée [debut, fin] (timestamps).
+   * Utilisé par le dashboard pour les calculs de statistiques.
+   */
+  function getSessionsParPeriode(debut, fin) {
+    if (!db) {
+      const sessions = JSON.parse(localStorage.getItem('studyproto_sessions') || '[]');
+      return Promise.resolve(
+        sessions.filter((s) => s.date >= debut && s.date <= fin)
+                .sort((a, b) => a.date - b.date)
+      );
+    }
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_SESSIONS, 'readonly');
+      const store = tx.objectStore(STORE_SESSIONS);
+      const index = store.index('date');
+      const range = IDBKeyRange.bound(debut, fin);
+      const request = index.getAll(range);
+
+      request.onsuccess = () => {
+        resolve(request.result.sort((a, b) => a.date - b.date));
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // ==== OPÉRATIONS SUR LES PRÉFÉRENCES UTILISATEUR ====
+
+  /**
+   * Sauvegarde les préférences utilisateur (chronotype, créneaux préférés).
+   * Structure attendue :
+   *   {
+   *     id: 1,  (toujours 1, une seule entrée)
+   *     preferredTimeSlots: ["16:00-19:00"],
+   *     detectedChronotype: "matinal" | "vespertinus" | "non_détecté",
+   *     lastUpdated: timestamp
+   *   }
+   */
+  function sauvegarderPreferences(prefs) {
+    if (!db) {
+      localStorage.setItem('studyproto_prefs', JSON.stringify(prefs));
+      return Promise.resolve();
+    }
+    // Toujours utiliser id=1 pour avoir une seule entrée
+    prefs.id = 1;
+    return execTransaction(STORE_PREFS, 'readwrite', (store) => {
+      return store.put(prefs);
+    });
+  }
+
+  /** Récupère les préférences utilisateur */
+  function getPreferences() {
+    if (!db) {
+      const raw = localStorage.getItem('studyproto_prefs');
+      if (!raw) return Promise.resolve(null);
+      try {
+        return Promise.resolve(JSON.parse(raw));
+      } catch (_) {
+        return Promise.resolve(null);
+      }
+    }
+
+    return execTransaction(STORE_PREFS, 'readonly', (store) => {
+      return store.get(1);
     });
   }
 
@@ -282,6 +369,9 @@ const StudyDB = (function () {
     supprimerContratDuJour: supprimerContratDuJour,
     enregistrerSession: enregistrerSession,
     getDernieresSessions: getDernieresSessions,
-    getToutesSessions: getToutesSessions
+    getToutesSessions: getToutesSessions,
+    getSessionsParPeriode: getSessionsParPeriode,
+    sauvegarderPreferences: sauvegarderPreferences,
+    getPreferences: getPreferences
   };
 })();

@@ -1,11 +1,15 @@
 // ============================================================
-// Study Protocol Manager — Logique applicative (étape 2)
+// Study Protocol Manager — Logique applicative (étape 3)
 // Persistance via IndexedDB (module db.js), fallback localStorage.
-// Nouvelles fonctionnalités :
+// Fonctionnalités :
+//   - Contrat quotidien avec verrouillage
+//   - Timer de session avec pause/reprise
 //   - Test de récupération active après chaque session
+//   - Évaluation qualité de concentration (1-5 étoiles)
 //   - Historique des sessions avec export CSV
-//   - Indicateurs visuels de statut (vert/jaune/gris)
-//   - Toast de notification
+//   - Dashboard chronobiologique (module dashboard.js)
+//   - Suggestions de créneaux basées sur les patterns détectés
+//   - Indicateurs visuels de statut
 //   - Récupération de session interrompue (refresh page)
 // ============================================================
 
@@ -17,6 +21,16 @@
   const MIN_TASKS = 3;
   const DIFFICULTY_LABELS = ['', 'Facile', 'Moyen', 'Difficile'];
   const MIN_RECALL_CHARS = 50; // minimum de caractères pour le résumé
+
+  // Labels de qualité (index 0 non utilisé, 1-5 correspondent aux étoiles)
+  const QUALITY_LABELS = [
+    '',
+    'Très difficile de me concentrer',
+    'Difficile de me concentrer',
+    'Concentration moyenne',
+    'Bonne concentration',
+    'Excellente concentration'
+  ];
 
   // Périmètre du cercle SVG (2 * PI * rayon 90)
   const RING_CIRCUMFERENCE = 2 * Math.PI * 90;
@@ -32,6 +46,7 @@
   const appNav      = $('#appNav');
   const tabMain     = $('#tabMain');
   const tabHistory  = $('#tabHistory');
+  const tabDashboard = $('#tabDashboard');
 
   // Vues principales
   const viewContract = $('#viewContract');
@@ -43,6 +58,10 @@
   const btnAddTask      = $('#btnAddTask');
   const btnLockContract = $('#btnLockContract');
   const btnLoadDemo     = $('#btnLoadDemo');
+
+  // Suggestion de créneau
+  const suggestionCreneau     = $('#suggestionCreneau');
+  const suggestionCreneauText = $('#suggestionCreneauText');
 
   // Vue verrouillée
   const progressSummary = $('#progressSummary');
@@ -76,6 +95,13 @@
   const btnRecallSave   = $('#btnRecallSave');
   const btnRecallSkip   = $('#btnRecallSkip');
 
+  // Modal évaluation qualité
+  const qualityModal        = $('#qualityModal');
+  const qualityStarsEl      = $('#qualityStars');
+  const qualitySelectedLabel = $('#qualitySelectedLabel');
+  const btnQualitySave      = $('#btnQualitySave');
+  const btnQualitySkip      = $('#btnQualitySkip');
+
   // Modal détail résumé
   const summaryDetailModal = $('#summaryDetailModal');
   const summaryDetailTitle = $('#summaryDetailTitle');
@@ -98,11 +124,13 @@
   let timerPaused = false;
   let currentTaskIndex = -1;
   let confirmCallback = null;   // fonction appelée si l'utilisateur confirme
-  let timerStartTime = null;    // timestamp de début de session (pour calcul durée réelle)
+  let timerStartTime = null;    // timestamp de début de session
   let timerPausedTotal = 0;     // temps total en pause (en ms)
   let timerPauseStart = null;   // timestamp du début de la pause en cours
-  let recallCallback = null;    // callback à appeler après le modal de récupération active
-  let activeTab = 'main';      // onglet actif : 'main' ou 'history'
+  let recallCallback = null;    // callback après le modal de récupération active
+  let qualityCallback = null;   // callback après le modal de qualité
+  let selectedQuality = 0;      // étoiles sélectionnées (1-5 ou 0=rien)
+  let activeTab = 'main';      // onglet actif : 'main', 'history' ou 'dashboard'
 
   // ---- Initialisation ----
   async function init() {
@@ -116,6 +144,9 @@
 
     // Vérifier s'il y a une session interrompue à restaurer
     restaurerSessionInterrompue();
+
+    // Afficher la suggestion de créneau si disponible
+    afficherSuggestionCreneau();
 
     attacherEvenements();
     enregistrerServiceWorker();
@@ -150,6 +181,25 @@
       contract = null;
       creerFormulaireInitial();
     }
+  }
+
+  // ---- Suggestion de créneau horaire (intégration patterns) ----
+
+  /**
+   * Affiche la suggestion de créneau si une préférence horaire est enregistrée.
+   * La suggestion apparaît dans le formulaire de création de contrat.
+   */
+  async function afficherSuggestionCreneau() {
+    const suggestion = await StudyDashboard.getSuggestionContrat();
+    if (!suggestion || !suggestion.creneaux || suggestion.creneaux.length === 0) {
+      suggestionCreneau.classList.add('hidden');
+      return;
+    }
+
+    const creneau = suggestion.creneaux[0]; // Premier créneau préféré
+    suggestionCreneauText.textContent =
+      `Suggestion : planifie tes tâches difficiles entre ${creneau} (ton créneau le plus efficace)`;
+    suggestionCreneau.classList.remove('hidden');
   }
 
   // ---- Sauvegarde / restauration de session interrompue ----
@@ -337,8 +387,7 @@
         duration: parseInt(c.querySelector('.input-duration').value, 10),
         difficulty: parseInt(c.querySelector('.input-difficulty').value, 10),
         done: false,
-        // Étape 2 : champs supplémentaires pour le suivi
-        sessionStatus: null // null = pas commencé, 'with-summary' = terminé avec résumé, 'without-summary' = terminé sans résumé
+        sessionStatus: null
       });
     });
     return tasks;
@@ -392,7 +441,6 @@
       } else if (task.done && task.sessionStatus === 'without-summary') {
         statusClass = ' done status-without-summary';
       } else if (task.done) {
-        // Compatibilité avec les anciennes données sans sessionStatus
         statusClass = ' done';
       }
 
@@ -409,7 +457,6 @@
       } else if (!task.done) {
         statusIndicator = '<span class="status-dot status-dot-grey" title="Pas encore commencé"></span>';
       } else {
-        // Ancien format (done=true mais pas de sessionStatus)
         statusIndicator = '<span class="status-dot status-dot-green" title="Terminé"></span>';
       }
 
@@ -499,7 +546,6 @@
   function calculerDureeReelle() {
     if (!timerStartTime) return 0;
     let pauseMs = timerPausedTotal;
-    // Si actuellement en pause, ajouter le temps de pause en cours
     if (timerPaused && timerPauseStart) {
       pauseMs += Date.now() - timerPauseStart;
     }
@@ -511,45 +557,63 @@
     if (chkSound.checked) {
       jouerSonFin();
     }
-
-    // Marquer la tâche et ouvrir le modal de récupération active
+    // Marquer la tâche et déclencher le flux recall → qualité → sauvegarde
     marquerTacheAccomplieEtRecall();
   }
 
-  /** Marque la tâche comme accomplie puis affiche le modal de récupération active */
+  /**
+   * Flux complet après fin de session :
+   * 1. Modal récupération active (résumé)
+   * 2. Modal évaluation qualité (étoiles)
+   * 3. Sauvegarde de la session avec toutes les données
+   */
   function marquerTacheAccomplieEtRecall() {
     if (currentTaskIndex < 0 || !contract.tasks[currentTaskIndex]) return;
 
     const task = contract.tasks[currentTaskIndex];
     const dureeReelle = calculerDureeReelle();
 
-    // Afficher le modal de récupération active
+    // Étape 1 : Modal de récupération active
     ouvrirRecallModal((summary, skipped) => {
-      // Mettre à jour le statut de la tâche
-      task.done = true;
-      task.sessionStatus = skipped ? 'without-summary' : 'with-summary';
-      sauvegarderContrat();
 
-      // Enregistrer la session dans IndexedDB
-      const sessionData = {
-        taskName: task.name,
-        subject: task.subject || '',
-        date: Date.now(),
-        duration: task.duration,
-        actualDuration: dureeReelle,
-        difficulty: task.difficulty,
-        summary: skipped ? null : summary,
-        completed: true
-      };
-      StudyDB.enregistrerSession(sessionData);
+      // Étape 2 : Modal d'évaluation qualité
+      ouvrirQualityModal((rating) => {
 
-      // Suggestion de pause
-      breakDuration.textContent = task.duration === 50 ? '10' : '5';
-      breakSuggestion.classList.remove('hidden');
+        // Étape 3 : Sauvegarder la session
+        task.done = true;
+        task.sessionStatus = skipped ? 'without-summary' : 'with-summary';
+        sauvegarderContrat();
 
-      afficherToast('Session enregistrée');
+        // Extraire l'heure de la session pour le champ hourOfDay
+        const heureSession = new Date().getHours();
+
+        const sessionData = {
+          taskName: task.name,
+          subject: task.subject || '',
+          date: Date.now(),
+          duration: task.duration,
+          actualDuration: dureeReelle,
+          difficulty: task.difficulty,
+          summary: skipped ? null : summary,
+          completed: true,
+          qualityRating: rating,     // 1-5 ou null si passé
+          hourOfDay: heureSession    // 0-23
+        };
+        StudyDB.enregistrerSession(sessionData);
+
+        // Invalider le cache du dashboard pour inclure la nouvelle session
+        StudyDashboard.invaliderCache();
+
+        // Suggestion de pause
+        breakDuration.textContent = task.duration === 50 ? '10' : '5';
+        breakSuggestion.classList.remove('hidden');
+
+        afficherToast('Session enregistrée');
+      });
     });
   }
+
+  // ---- Modal de récupération active ----
 
   /** Ouvre le modal de récupération active. Le callback reçoit (summary, skipped). */
   function ouvrirRecallModal(callback) {
@@ -566,14 +630,43 @@
     recallCallback = null;
   }
 
+  // ---- Modal d'évaluation qualité ----
+
+  /** Ouvre le modal d'évaluation qualité. Le callback reçoit le rating (1-5 ou null). */
+  function ouvrirQualityModal(callback) {
+    qualityCallback = callback;
+    selectedQuality = 0;
+    mettreAJourEtoiles();
+    qualitySelectedLabel.innerHTML = '&nbsp;';
+    btnQualitySave.disabled = true;
+    qualityModal.classList.remove('hidden');
+  }
+
+  function fermerQualityModal() {
+    qualityModal.classList.add('hidden');
+    qualityCallback = null;
+  }
+
+  /** Met à jour l'affichage des étoiles selon la sélection */
+  function mettreAJourEtoiles() {
+    qualityStarsEl.querySelectorAll('.quality-star').forEach((btn) => {
+      const rating = parseInt(btn.dataset.rating, 10);
+      if (rating <= selectedQuality) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+  }
+
+  // ---- Timer : pause / terminer / abandonner ----
+
   function togglePause() {
     timerPaused = !timerPaused;
     if (timerPaused) {
-      // Début de la pause
       timerPauseStart = Date.now();
       btnPause.textContent = 'Reprendre';
     } else {
-      // Fin de la pause
       if (timerPauseStart) {
         timerPausedTotal += Date.now() - timerPauseStart;
         timerPauseStart = null;
@@ -650,7 +743,6 @@
     toastTimeout = setTimeout(() => {
       toastEl.classList.remove('toast-visible');
       toastEl.classList.add('toast-hiding');
-      // Attendre la fin de l'animation avant de cacher
       setTimeout(() => {
         toastEl.classList.add('hidden');
         toastEl.classList.remove('toast-hiding');
@@ -676,7 +768,6 @@
       const card = document.createElement('div');
       card.className = 'history-card';
 
-      // Formater la date
       const dateObj = new Date(session.date);
       const dateStr = dateObj.toLocaleDateString('fr-BE', {
         day: 'numeric', month: 'short', year: 'numeric'
@@ -685,7 +776,6 @@
         hour: '2-digit', minute: '2-digit'
       });
 
-      // Résumé tronqué (80 caractères max dans la liste)
       const hasSummary = session.summary && session.summary.length > 0;
       let summaryPreview = '';
       if (hasSummary) {
@@ -697,15 +787,25 @@
         summaryPreview = '<p class="history-no-summary">Pas de résumé</p>';
       }
 
-      // Indicateur de statut
       const statusDot = hasSummary
         ? '<span class="status-dot status-dot-green"></span>'
         : '<span class="status-dot status-dot-yellow"></span>';
 
+      // Affichage de la qualité si disponible
+      let qualityDisplay = '';
+      if (session.qualityRating != null && session.qualityRating >= 1) {
+        const stars = '\u2605'.repeat(session.qualityRating) +
+                      '\u2606'.repeat(5 - session.qualityRating);
+        qualityDisplay = `<span class="history-quality" title="Qualité de concentration">${stars}</span>`;
+      }
+
       card.innerHTML = `
         <div class="history-card-header">
           <span class="history-date">${dateStr} à ${timeStr}</span>
-          ${statusDot}
+          <div class="history-card-badges">
+            ${qualityDisplay}
+            ${statusDot}
+          </div>
         </div>
         <div class="history-card-body">
           <div class="history-task-name">${escapeHtml(session.taskName)}</div>
@@ -716,7 +816,6 @@
         </div>
       `;
 
-      // Clic sur le résumé pour voir en entier
       if (hasSummary) {
         card.querySelector('.history-summary').addEventListener('click', () => {
           ouvrirDetailResume(session.taskName, session.summary);
@@ -743,8 +842,12 @@
       return;
     }
 
-    // En-tête CSV
-    const headers = ['Date', 'Heure', 'Tâche', 'Matière', 'Durée prévue (min)', 'Durée réelle (min)', 'Difficulté', 'Résumé', 'Complété'];
+    // En-tête CSV (ajout qualité et heure)
+    const headers = [
+      'Date', 'Heure', 'Tâche', 'Matière',
+      'Durée prévue (min)', 'Durée réelle (min)',
+      'Difficulté', 'Qualité (1-5)', 'Résumé', 'Complété'
+    ];
     const rows = [headers.join(';')];
 
     sessions.forEach((s) => {
@@ -753,6 +856,7 @@
       const timeStr = d.toLocaleTimeString('fr-BE', { hour: '2-digit', minute: '2-digit' });
       const diffLabel = DIFFICULTY_LABELS[s.difficulty] || '';
       const summaryClean = s.summary ? '"' + s.summary.replace(/"/g, '""') + '"' : '';
+      const qualite = s.qualityRating != null ? s.qualityRating : '';
 
       rows.push([
         dateStr,
@@ -762,13 +866,13 @@
         s.duration,
         s.actualDuration || '',
         diffLabel,
+        qualite,
         summaryClean,
         s.completed ? 'Oui' : 'Non'
       ].join(';'));
     });
 
-    // Générer et télécharger le fichier CSV
-    const csvContent = '\uFEFF' + rows.join('\n'); // BOM UTF-8 pour Excel
+    const csvContent = '\uFEFF' + rows.join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -849,10 +953,18 @@
     if (tab === 'main') {
       tabMain.classList.remove('hidden');
       tabHistory.classList.add('hidden');
+      tabDashboard.classList.add('hidden');
     } else if (tab === 'history') {
       tabMain.classList.add('hidden');
       tabHistory.classList.remove('hidden');
+      tabDashboard.classList.add('hidden');
       afficherHistorique();
+    } else if (tab === 'dashboard') {
+      tabMain.classList.add('hidden');
+      tabHistory.classList.add('hidden');
+      tabDashboard.classList.remove('hidden');
+      // Charger le dashboard chronobiologique
+      StudyDashboard.afficherDashboard();
     }
   }
 
@@ -929,13 +1041,13 @@
       });
     });
 
-    // Modal récupération active : compteur de caractères
+    // ---- Modal récupération active ----
+
     recallTextarea.addEventListener('input', () => {
       const len = recallTextarea.value.trim().length;
       recallCharCount.textContent = len;
       btnRecallSave.disabled = len < MIN_RECALL_CHARS;
 
-      // Indicateur visuel du compteur
       const counterEl = recallCharCount.parentElement;
       if (len >= MIN_RECALL_CHARS) {
         counterEl.classList.add('recall-counter-ok');
@@ -944,18 +1056,15 @@
       }
     });
 
-    // Bouton « Enregistrer mon résumé »
     btnRecallSave.addEventListener('click', () => {
       const summary = recallTextarea.value.trim();
       if (summary.length < MIN_RECALL_CHARS) return;
-
       if (recallCallback) {
         recallCallback(summary, false);
       }
       fermerRecallModal();
     });
 
-    // Bouton « Passer pour cette fois »
     btnRecallSkip.addEventListener('click', () => {
       if (recallCallback) {
         recallCallback(null, true);
@@ -963,13 +1072,50 @@
       fermerRecallModal();
     });
 
-    // Modal détail résumé : fermer
+    // ---- Modal évaluation qualité ----
+
+    // Clic sur une étoile
+    qualityStarsEl.querySelectorAll('.quality-star').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        selectedQuality = parseInt(btn.dataset.rating, 10);
+        mettreAJourEtoiles();
+        qualitySelectedLabel.textContent = QUALITY_LABELS[selectedQuality] || '';
+        btnQualitySave.disabled = false;
+      });
+    });
+
+    btnQualitySave.addEventListener('click', () => {
+      if (selectedQuality >= 1 && qualityCallback) {
+        qualityCallback(selectedQuality);
+      }
+      fermerQualityModal();
+    });
+
+    btnQualitySkip.addEventListener('click', () => {
+      if (qualityCallback) {
+        qualityCallback(null);
+      }
+      fermerQualityModal();
+    });
+
+    // ---- Modal détail résumé ----
     btnCloseSummaryDetail.addEventListener('click', () => {
       summaryDetailModal.classList.add('hidden');
     });
 
     // Export CSV
     btnExportCSV.addEventListener('click', exporterCSV);
+
+    // ---- Dashboard : navigation heatmap et exports PNG ----
+    const btnWeekPrev = $('#btnWeekPrev');
+    const btnWeekNext = $('#btnWeekNext');
+    const btnExportHeatmap = $('#btnExportHeatmap');
+    const btnExportQualite = $('#btnExportQualite');
+
+    if (btnWeekPrev) btnWeekPrev.addEventListener('click', StudyDashboard.semainePrecedente);
+    if (btnWeekNext) btnWeekNext.addEventListener('click', StudyDashboard.semaineSuivante);
+    if (btnExportHeatmap) btnExportHeatmap.addEventListener('click', () => StudyDashboard.exporterPNG('heatmap'));
+    if (btnExportQualite) btnExportQualite.addEventListener('click', () => StudyDashboard.exporterPNG('qualite'));
 
     // Sauvegarde de l'état du timer avant fermeture/refresh de la page
     window.addEventListener('beforeunload', () => {

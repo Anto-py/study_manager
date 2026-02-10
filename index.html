@@ -23,6 +23,7 @@
   <nav class="app-nav" id="appNav">
     <button class="nav-tab active" data-tab="main" type="button">Contrat</button>
     <button class="nav-tab" data-tab="history" type="button">Historique</button>
+    <button class="nav-tab" data-tab="dashboard" type="button">Mes statistiques</button>
   </nav>
 
   <main id="app">
@@ -34,6 +35,11 @@
       <section id="viewContract" class="view">
         <h2 class="section-title">Ma mission du jour</h2>
         <p class="section-hint">Choisis entre 3 et 5 tâches pour ta journée. Pas plus&nbsp;: mieux vaut finir peu que commencer beaucoup.</p>
+
+        <!-- Suggestion chronobiologique (visible si préférence détectée) -->
+        <div id="suggestionCreneau" class="suggestion-creneau hidden">
+          <p id="suggestionCreneauText"></p>
+        </div>
 
         <div id="taskList" class="task-list">
           <!-- Les formulaires de tâches sont générés par JS -->
@@ -130,6 +136,77 @@
       </section>
     </div><!-- /tabHistory -->
 
+    <!-- ====== VUE DASHBOARD CHRONOBIOLOGIQUE ====== -->
+    <div id="tabDashboard" class="hidden">
+      <section class="view">
+        <h2 class="section-title">Mes statistiques</h2>
+        <p class="section-hint">Analyse de tes habitudes d'étude et détection de tes meilleures tranches horaires.</p>
+
+        <!-- Cards statistiques -->
+        <div class="stats-cards">
+          <div class="stat-card" id="statTempsFocalise">
+            <div class="stat-value">—</div>
+            <div class="stat-label">Temps focalisé ce mois</div>
+          </div>
+          <div class="stat-card" id="statSessionsAccomplies">
+            <div class="stat-value">—</div>
+            <div class="stat-label">Sessions accomplies</div>
+          </div>
+          <div class="stat-card" id="statMatieresTravaillees">
+            <div class="stat-label">Matières travaillées</div>
+          </div>
+        </div>
+
+        <!-- Heatmap hebdomadaire -->
+        <div class="dashboard-section">
+          <div class="dashboard-section-header">
+            <h3 class="dashboard-section-title">Activité hebdomadaire</h3>
+            <button class="btn-export-png" id="btnExportHeatmap" type="button" title="Exporter en PNG">PNG</button>
+          </div>
+
+          <div class="heatmap-nav">
+            <button class="btn btn-secondary btn-small" id="btnWeekPrev" type="button">&larr; Semaine préc.</button>
+            <span class="heatmap-week-label" id="heatmapWeekLabel">Semaine actuelle</span>
+            <button class="btn btn-secondary btn-small" id="btnWeekNext" type="button">Semaine suiv. &rarr;</button>
+          </div>
+
+          <div id="heatmapContainer" class="heatmap-container">
+            <!-- Heatmap générée par JS -->
+          </div>
+
+          <div class="heatmap-legend">
+            <span class="heatmap-legend-label">Moins</span>
+            <span class="heatmap-legend-cell" style="background:#eef2f5"></span>
+            <span class="heatmap-legend-cell" style="background:#c6e6d4"></span>
+            <span class="heatmap-legend-cell" style="background:#7cc9a0"></span>
+            <span class="heatmap-legend-cell" style="background:#3a9d6e"></span>
+            <span class="heatmap-legend-label">Plus</span>
+          </div>
+        </div>
+
+        <!-- Graphique de qualité perçue -->
+        <div class="dashboard-section">
+          <div class="dashboard-section-header">
+            <h3 class="dashboard-section-title">Qualité perçue par tranche horaire</h3>
+            <button class="btn-export-png" id="btnExportQualite" type="button" title="Exporter en PNG">PNG</button>
+          </div>
+          <p class="dashboard-section-hint">Corrélation entre l'heure et ta concentration (2 dernières semaines)</p>
+          <div class="quality-chart-container">
+            <canvas id="qualityCanvas"></canvas>
+          </div>
+        </div>
+
+        <!-- Insights / Détection de patterns -->
+        <div class="dashboard-section">
+          <h3 class="dashboard-section-title">Analyse de tes habitudes</h3>
+          <div id="insightsContainer">
+            <!-- Généré par JS -->
+          </div>
+        </div>
+
+      </section>
+    </div><!-- /tabDashboard -->
+
     <!-- ====== MODAL : TEST DE RÉCUPÉRATION ACTIVE ====== -->
     <div id="recallModal" class="modal-overlay hidden">
       <div class="modal-box">
@@ -153,6 +230,49 @@
           </button>
           <button id="btnRecallSkip" class="btn btn-link" type="button">
             Passer pour cette fois
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====== MODAL : ÉVALUATION QUALITÉ DE SESSION ====== -->
+    <div id="qualityModal" class="modal-overlay hidden">
+      <div class="modal-box modal-box-compact">
+        <h3 class="modal-title">Comment s'est passée ta concentration ?</h3>
+        <p class="modal-hint">Évalue rapidement ta qualité de concentration pour cette session.</p>
+
+        <div class="quality-stars" id="qualityStars">
+          <button class="quality-star" data-rating="1" type="button" title="Très difficile de me concentrer">
+            <svg viewBox="0 0 24 24" class="star-svg"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          </button>
+          <button class="quality-star" data-rating="2" type="button" title="Difficile">
+            <svg viewBox="0 0 24 24" class="star-svg"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          </button>
+          <button class="quality-star" data-rating="3" type="button" title="Concentration moyenne">
+            <svg viewBox="0 0 24 24" class="star-svg"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          </button>
+          <button class="quality-star" data-rating="4" type="button" title="Bonne concentration">
+            <svg viewBox="0 0 24 24" class="star-svg"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          </button>
+          <button class="quality-star" data-rating="5" type="button" title="Excellente concentration">
+            <svg viewBox="0 0 24 24" class="star-svg"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          </button>
+        </div>
+
+        <div class="quality-labels">
+          <span>Très difficile</span>
+          <span>Moyenne</span>
+          <span>Excellente</span>
+        </div>
+
+        <p class="quality-selected-label" id="qualitySelectedLabel">&nbsp;</p>
+
+        <div class="modal-actions">
+          <button id="btnQualitySave" class="btn btn-primary" type="button" disabled>
+            Valider
+          </button>
+          <button id="btnQualitySkip" class="btn btn-link" type="button">
+            Passer
           </button>
         </div>
       </div>
@@ -185,8 +305,9 @@
 
   </main>
 
-  <!-- Scripts : db.js doit être chargé avant app.js -->
+  <!-- Scripts : db.js doit être chargé avant dashboard.js et app.js -->
   <script src="db.js"></script>
+  <script src="dashboard.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
