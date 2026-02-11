@@ -155,6 +155,9 @@
   const lockedTaskList  = $('#lockedTaskList');
   const btnResetDay     = $('#btnResetDay');
 
+  // Réinitialisation complète
+  const btnResetApp = $('#btnResetApp');
+
   // Timer
   const timerTaskName     = $('#timerTaskName');
   const timerSubject      = $('#timerSubject');
@@ -1718,6 +1721,50 @@
     );
   }
 
+  // ---- Réinitialisation complète de l'application ----
+
+  function reinitialiserApp() {
+    afficherConfirmation(
+      'Supprimer toutes les données\u00a0? Sessions, contrats, flashcards et profil chronotype seront effacés définitivement.',
+      'Oui, tout supprimer',
+      async () => {
+        // Arrêter le timer si actif
+        if (timerInterval) {
+          clearInterval(timerInterval);
+          timerInterval = null;
+        }
+
+        // Supprimer toutes les données persistées
+        await StudyDB.reinitialiserTout();
+
+        // Réinitialiser l'état mémoire
+        contract = null;
+        currentTaskIndex = -1;
+        timerRemaining = 0;
+        timerTotal = 0;
+        timerPaused = false;
+        timerStartTime = null;
+        timerPausedTotal = 0;
+        timerPauseStart = null;
+        reviewCards = [];
+        reviewIndex = 0;
+        reviewFlipped = false;
+        pendingSuggestions = [];
+        pendingSuggestionSubject = '';
+        pendingSuggestionTaskName = '';
+
+        // Invalider le cache du dashboard
+        if (typeof StudyDashboard !== 'undefined') {
+          StudyDashboard.invaliderCache();
+        }
+
+        // Relancer l'onboarding
+        masquerAppPrincipale();
+        demarrerOnboarding();
+      }
+    );
+  }
+
   // ---- Données de démonstration ----
 
   function chargerDemo() {
@@ -1847,6 +1894,7 @@
     btnLockContract.addEventListener('click', verrouillerContrat);
     btnLoadDemo.addEventListener('click', chargerDemo);
     btnResetDay.addEventListener('click', nouvelleJournee);
+    if (btnResetApp) btnResetApp.addEventListener('click', reinitialiserApp);
 
     // Timer
     btnPause.addEventListener('click', togglePause);

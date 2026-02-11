@@ -1623,6 +1623,31 @@ main {
   margin-top: .75rem;
 }
 
+/* ---------- Zone de danger (reset complet) ---------- */
+.danger-zone {
+  margin-top: 2rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius);
+  background: rgba(176, 125, 98, .06);
+}
+.danger-zone-title {
+  font-size: .9rem;
+  font-weight: 600;
+  color: var(--color-danger);
+  margin: 0 0 .4rem;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+.danger-zone-desc {
+  font-size: .82rem;
+  color: var(--color-text-light);
+  margin: 0 0 .85rem;
+}
+.btn-reset-app {
+  width: 100%;
+}
+
 /* ---------- Responsive > 600px ---------- */
 @media (min-width: 600px) {
   main { padding: 1.5rem; }
