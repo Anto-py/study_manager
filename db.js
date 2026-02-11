@@ -525,6 +525,33 @@ const StudyDB = (function () {
     return true;
   }
 
+  // ==== RÉINITIALISATION COMPLÈTE ====
+
+  /**
+   * Supprime toutes les données de l'application :
+   * vide les 4 stores IndexedDB et efface les clés localStorage.
+   */
+  async function reinitialiserTout() {
+    // Vider les stores IndexedDB
+    if (db) {
+      const stores = [STORE_CONTRACTS, STORE_SESSIONS, STORE_PREFS, STORE_FLASHCARDS];
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(stores, 'readwrite');
+        stores.forEach((name) => tx.objectStore(name).clear());
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+
+    // Vider le localStorage (toutes les clés studyproto_*)
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('studyproto_')) keysToRemove.push(key);
+    }
+    keysToRemove.forEach((k) => localStorage.removeItem(k));
+  }
+
   // ==== API PUBLIQUE ====
   return {
     init: init,
@@ -545,6 +572,7 @@ const StudyDB = (function () {
     getToutesFlashcards: getToutesFlashcards,
     getFlashcardsParMatiere: getFlashcardsParMatiere,
     getStatsFlashcards: getStatsFlashcards,
-    estPremiereUtilisation: estPremiereUtilisation
+    estPremiereUtilisation: estPremiereUtilisation,
+    reinitialiserTout: reinitialiserTout
   };
 })();
