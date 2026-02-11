@@ -13,8 +13,52 @@
 </head>
 <body>
 
+  <!-- ====== ÉCRAN D'ONBOARDING : QUESTIONNAIRE CHRONOTYPE ====== -->
+  <div id="onboardingScreen" class="onboarding-screen hidden">
+    <div class="onboarding-container">
+      <div class="onboarding-header">
+        <h1 class="onboarding-title">Es-tu plutôt du matin ou du soir ?</h1>
+        <p class="onboarding-subtitle">Réponds à 5 questions rapides pour découvrir ton profil chronobiologique et optimiser tes révisions.</p>
+      </div>
+
+      <!-- Barre de progression -->
+      <div class="onboarding-progress">
+        <div class="onboarding-progress-bar" id="onboardingProgressBar" style="width:20%"></div>
+      </div>
+      <p class="onboarding-step-label" id="onboardingStepLabel">Question 1 / 5</p>
+
+      <!-- Conteneur des questions (une seule visible à la fois) -->
+      <div id="onboardingQuestions">
+        <!-- Générées par JS -->
+      </div>
+
+      <!-- Navigation -->
+      <div class="onboarding-nav">
+        <button id="btnOnboardingPrev" class="btn btn-secondary btn-small" type="button" disabled>&larr; Précédent</button>
+        <button id="btnOnboardingNext" class="btn btn-primary" type="button" disabled>Suivant &rarr;</button>
+      </div>
+
+      <button id="btnOnboardingSkip" class="btn btn-link onboarding-skip" type="button">Passer et utiliser l'app directement</button>
+    </div>
+  </div>
+
+  <!-- ====== ÉCRAN RÉSULTAT CHRONOTYPE ====== -->
+  <div id="chronotypeResultScreen" class="onboarding-screen hidden">
+    <div class="onboarding-container chronotype-result">
+      <div class="chronotype-icon" id="chronotypeIcon"></div>
+      <h2 class="chronotype-result-title" id="chronotypeResultTitle">Ton profil : —</h2>
+      <p class="chronotype-result-desc" id="chronotypeResultDesc"></p>
+      <div class="chronotype-slots">
+        <h3>Tes créneaux optimaux pour travailler :</h3>
+        <div class="chronotype-slots-list" id="chronotypeSlotsList"></div>
+      </div>
+      <p class="chronotype-reference">Basé sur les recherches en chronobiologie (Carskadon et al.)</p>
+      <button id="btnStartApp" class="btn btn-primary btn-lock" type="button">Commencer à utiliser l'app</button>
+    </div>
+  </div>
+
   <!-- ====== EN-TÊTE ====== -->
-  <header class="app-header">
+  <header class="app-header" id="appHeader">
     <h1 class="app-title">Study Protocol</h1>
     <p class="app-date" id="currentDate"></p>
   </header>
@@ -23,7 +67,8 @@
   <nav class="app-nav" id="appNav">
     <button class="nav-tab active" data-tab="main" type="button">Contrat</button>
     <button class="nav-tab" data-tab="history" type="button">Historique</button>
-    <button class="nav-tab" data-tab="dashboard" type="button">Mes statistiques</button>
+    <button class="nav-tab" data-tab="flashcards" type="button">Cartes</button>
+    <button class="nav-tab" data-tab="dashboard" type="button">Stats</button>
   </nav>
 
   <main id="app">
@@ -40,6 +85,9 @@
         <div id="suggestionCreneau" class="suggestion-creneau hidden">
           <p id="suggestionCreneauText"></p>
         </div>
+
+        <!-- Badge créneau optimal (étape 4) -->
+        <div id="badgeCreneauOptimal" class="badge-creneau hidden"></div>
 
         <div id="taskList" class="task-list">
           <!-- Les formulaires de tâches sont générés par JS -->
@@ -136,11 +184,57 @@
       </section>
     </div><!-- /tabHistory -->
 
+    <!-- ====== VUE FLASHCARDS / CARTES DE RÉVISION ====== -->
+    <div id="tabFlashcards" class="hidden">
+      <section class="view">
+        <h2 class="section-title">Mes cartes de révision</h2>
+
+        <!-- Statistiques flashcards -->
+        <div class="flashcard-stats" id="flashcardStats">
+          <!-- Généré par JS -->
+        </div>
+
+        <!-- Filtre par matière -->
+        <div class="flashcard-filter">
+          <label for="flashcardFilterSubject">Filtrer par matière :</label>
+          <select id="flashcardFilterSubject" class="flashcard-filter-select">
+            <option value="">Toutes les matières</option>
+          </select>
+        </div>
+
+        <!-- Boutons d'action -->
+        <div class="flashcard-actions">
+          <button id="btnStartReview" class="btn btn-primary" type="button" disabled>Réviser mes cartes</button>
+          <button id="btnCreateManualFlashcard" class="btn btn-secondary" type="button">Créer une carte manuellement</button>
+        </div>
+
+        <!-- Liste des flashcards -->
+        <div id="flashcardList" class="flashcard-list">
+          <!-- Généré par JS -->
+        </div>
+
+        <div id="flashcardEmpty" class="history-empty hidden">
+          <p>Aucune carte de révision pour le moment.</p>
+          <p class="section-hint">Les cartes seront créées automatiquement à partir de tes résumés de session, ou tu peux en créer manuellement.</p>
+        </div>
+      </section>
+    </div><!-- /tabFlashcards -->
+
     <!-- ====== VUE DASHBOARD CHRONOBIOLOGIQUE ====== -->
     <div id="tabDashboard" class="hidden">
       <section class="view">
         <h2 class="section-title">Mes statistiques</h2>
         <p class="section-hint">Analyse de tes habitudes d'étude et détection de tes meilleures tranches horaires.</p>
+
+        <!-- Card chronotype (étape 4) -->
+        <div class="chronotype-card" id="chronotypeCard" style="display:none">
+          <div class="chronotype-card-icon" id="chronotypeCardIcon"></div>
+          <div class="chronotype-card-info">
+            <div class="chronotype-card-label" id="chronotypeCardLabel">—</div>
+            <div class="chronotype-card-date" id="chronotypeCardDate">—</div>
+          </div>
+          <button class="btn btn-secondary btn-small" id="btnRefaireChronotype" type="button">Refaire le test</button>
+        </div>
 
         <!-- Cards statistiques -->
         <div class="stats-cards">
@@ -286,6 +380,84 @@
         <div class="modal-actions">
           <button id="btnCloseSummaryDetail" class="btn btn-secondary" type="button">Fermer</button>
         </div>
+      </div>
+    </div>
+
+    <!-- ====== MODAL : SUGGESTION DE FLASHCARDS (étape 4) ====== -->
+    <div id="flashcardSuggestionModal" class="modal-overlay hidden">
+      <div class="modal-box modal-box-large">
+        <h3 class="modal-title">Cartes de révision détectées</h3>
+        <p class="modal-hint" id="flashcardSuggestionHint">J'ai détecté des concepts clés dans ton résumé. Veux-tu créer des cartes de révision ?</p>
+
+        <div id="flashcardSuggestionList" class="flashcard-suggestion-list">
+          <!-- Généré par JS -->
+        </div>
+
+        <div class="modal-actions">
+          <button id="btnFlashcardSuggestionSave" class="btn btn-primary" type="button">
+            Créer les cartes sélectionnées
+          </button>
+          <button id="btnFlashcardSuggestionSkip" class="btn btn-link" type="button">
+            Plus tard
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====== MODAL : CRÉATION MANUELLE DE FLASHCARD (étape 4) ====== -->
+    <div id="flashcardManualModal" class="modal-overlay hidden">
+      <div class="modal-box">
+        <h3 class="modal-title">Créer une carte de révision</h3>
+
+        <div class="field">
+          <label for="manualFlashcardQuestion">Question</label>
+          <input type="text" id="manualFlashcardQuestion" placeholder="Ex : Qu'est-ce que la photosynthèse ?">
+        </div>
+        <div class="field">
+          <label for="manualFlashcardAnswer">Réponse</label>
+          <textarea id="manualFlashcardAnswer" class="recall-textarea" rows="3" placeholder="Ex : La photosynthèse est le processus..."></textarea>
+        </div>
+        <div class="field">
+          <label for="manualFlashcardSubject">Matière</label>
+          <input type="text" id="manualFlashcardSubject" placeholder="Ex : Sciences (optionnel)">
+        </div>
+
+        <div class="modal-actions">
+          <button id="btnManualFlashcardSave" class="btn btn-primary" type="button">Créer la carte</button>
+          <button id="btnManualFlashcardCancel" class="btn btn-link" type="button">Annuler</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====== MODAL : MODE RÉVISION FLASHCARD (étape 4) ====== -->
+    <div id="flashcardReviewModal" class="modal-overlay hidden">
+      <div class="modal-box modal-box-review">
+        <div class="review-header">
+          <span class="review-progress" id="reviewProgress">1 / 10</span>
+          <button id="btnCloseReview" class="btn btn-link" type="button">Fermer</button>
+        </div>
+
+        <div class="flashcard-flip-container" id="flashcardFlipContainer">
+          <div class="flashcard-flip-inner" id="flashcardFlipInner">
+            <!-- Recto -->
+            <div class="flashcard-flip-front">
+              <p class="flashcard-question-text" id="reviewQuestionText"></p>
+            </div>
+            <!-- Verso -->
+            <div class="flashcard-flip-back">
+              <p class="flashcard-answer-text" id="reviewAnswerText"></p>
+            </div>
+          </div>
+        </div>
+
+        <button id="btnRevealAnswer" class="btn btn-primary btn-reveal" type="button">Révéler la réponse</button>
+
+        <div id="reviewButtons" class="review-buttons hidden">
+          <button id="btnReviewKnew" class="btn btn-review-knew" type="button">Je savais</button>
+          <button id="btnReviewRetry" class="btn btn-review-retry" type="button">À revoir</button>
+        </div>
+
+        <div class="review-subject" id="reviewSubject"></div>
       </div>
     </div>
 
