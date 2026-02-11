@@ -550,7 +550,7 @@ main { max-width: 600px; margin: 0 auto; padding: 0 1rem 5rem; }
   margin-bottom: .75rem;
 }
 .flashcard-flip-inner {
-  position: relative;
+  display: grid;
   width: 100%;
   min-height: 180px;
   transition: transform .5s ease;
@@ -558,8 +558,7 @@ main { max-width: 600px; margin: 0 auto; padding: 0 1rem 5rem; }
 }
 .flashcard-flip-inner.flipped { transform: rotateY(180deg); }
 .flashcard-flip-front, .flashcard-flip-back {
-  position: absolute;
-  inset: 0;
+  grid-area: 1 / 1;
   backface-visibility: hidden;
   display: flex;
   align-items: center;
@@ -569,6 +568,7 @@ main { max-width: 600px; margin: 0 auto; padding: 0 1rem 5rem; }
   font-size: .95rem;
   text-align: center;
   word-break: break-word;
+  overflow-y: auto;
 }
 .flashcard-flip-front {
   background: var(--color-surface-alt);
