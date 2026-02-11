@@ -1,50 +1,57 @@
 // ============================================================
-// Study Protocol Manager — Logique applicative (étape 4)
-// Persistance via IndexedDB (module db.js), fallback localStorage.
-// Fonctionnalités :
-//   - Contrat quotidien avec verrouillage
-//   - Timer de session avec pause/reprise
-//   - Test de récupération active après chaque session
-//   - Évaluation qualité de concentration (1-5 étoiles)
-//   - Historique des sessions avec export CSV
-//   - Dashboard chronobiologique (module dashboard.js)
-//   - Suggestions de créneaux basées sur les patterns détectés
-//   - Indicateurs visuels de statut
-//   - Récupération de session interrompue (refresh page)
-//   - Questionnaire chronotype à l'onboarding (étape 4)
-//   - Cartes de révision (flashcards) avec extraction auto (étape 4)
-//   - Mode révision interactif avec flip (étape 4)
+// Study Protocol Manager — Application principale (v1.0 finale)
+// Gère : contrat quotidien, timer, récupération active,
+// évaluation qualité, historique paginé, flashcards SM-2,
+// onboarding, dark mode, tooltips contextuels, export/import.
 // ============================================================
 
 (function () {
   'use strict';
 
+  // ---- État global ----
+  let activeTab = 'main';
+  let contratDuJour = null;
+  let currentTaskIndex = -1;
+  let timerInterval = null;
+  let timerSecondsLeft = 0;
+  let timerTotalSeconds = 0;
+  let timerPaused = false;
+  let timerStartedAt = null;
+  let timerPausedElapsed = 0;
+  let sessionPending = null;
+
+  // Historique paginé
+  let historyOffset = 0;
+  const HISTORY_PAGE_SIZE = 20;
+
+  // Flashcards
+  let reviewCards = [];
+  let reviewIndex = 0;
+  let reviewFlipped = false;
+  let reviewMode = 'due'; // 'due' ou 'all'
+
+  // Onboarding
+  let onboardingStep = 0;
+  let onboardingAnswers = [0, 0, 0, 0, 0];
+  let welcomeSlide = 0;
+
+  // Qualité
+  let selectedQuality = 0;
+
+  // Import
+  let pendingImportFile = null;
+
+  // Tooltips shown (persisted in localStorage)
+  let tooltipsShown = {};
+
   // ---- Constantes ----
-  const MAX_TASKS = 5;
-  const MIN_TASKS = 3;
   const DIFFICULTY_LABELS = ['', 'Facile', 'Moyen', 'Difficile'];
-  const MIN_RECALL_CHARS = 50; // minimum de caractères pour le résumé
+  const QUALITY_LABELS = ['', 'Très difficile', 'Difficile', 'Moyenne', 'Bonne', 'Excellente'];
+  const CIRCUMFERENCE = 2 * Math.PI * 90; // ~565.49
 
-  // Labels de qualité (index 0 non utilisé, 1-5 correspondent aux étoiles)
-  const QUALITY_LABELS = [
-    '',
-    'Très difficile de me concentrer',
-    'Difficile de me concentrer',
-    'Concentration moyenne',
-    'Bonne concentration',
-    'Excellente concentration'
-  ];
-
-  // Périmètre du cercle SVG (2 * PI * rayon 90)
-  const RING_CIRCUMFERENCE = 2 * Math.PI * 90;
-
-  // Clé pour sauvegarder l'état du timer en cas de refresh
-  const TIMER_STATE_KEY = 'studyproto_timer_state';
-
-  // ---- Questionnaire chronotype (5 questions, score 1-5 chacune) ----
   const CHRONOTYPE_QUESTIONS = [
     {
-      question: 'Si tu n\'avais aucune obligation, à quelle heure te lèverais-tu naturellement ?',
+      text: 'Si tu pouvais te lever à l\'heure que tu veux (sans réveil), à quelle heure te réveillerais-tu naturellement ?',
       options: [
         { label: 'Avant 7h', score: 5 },
         { label: 'Entre 7h et 8h', score: 4 },
@@ -54,27 +61,27 @@
       ]
     },
     {
-      question: 'À quel moment de la journée te sens-tu le plus en forme pour réfléchir ?',
+      text: 'À quel moment de la journée te sens-tu le plus alerte et efficace pour réfléchir ?',
       options: [
         { label: 'Tôt le matin (8h-10h)', score: 5 },
         { label: 'En fin de matinée (10h-12h)', score: 4 },
         { label: 'En début d\'après-midi (13h-15h)', score: 3 },
-        { label: 'En fin d\'après-midi (16h-18h)', score: 2 },
-        { label: 'Le soir (après 19h)', score: 1 }
+        { label: 'En fin d\'après-midi (15h-18h)', score: 2 },
+        { label: 'Le soir (après 18h)', score: 1 }
       ]
     },
     {
-      question: 'Si tu devais passer un examen important, quand le planifierais-tu idéalement ?',
+      text: 'Si tu devais passer un examen important, à quelle heure préférerais-tu le planifier ?',
       options: [
         { label: '8h-10h', score: 5 },
         { label: '10h-12h', score: 4 },
-        { label: '14h-16h', score: 3 },
-        { label: '16h-18h', score: 2 },
-        { label: 'Après 18h', score: 1 }
+        { label: '13h-15h', score: 3 },
+        { label: '15h-17h', score: 2 },
+        { label: 'Après 17h', score: 1 }
       ]
     },
     {
-      question: 'À quelle heure commences-tu à te sentir fatigué(e) le soir ?',
+      text: 'En soirée, à partir de quelle heure commences-tu à te sentir fatigué·e ?',
       options: [
         { label: 'Avant 21h', score: 5 },
         { label: 'Vers 21h-22h', score: 4 },
@@ -84,2003 +91,1583 @@
       ]
     },
     {
-      question: 'Comment te décrirais-tu ?',
+      text: 'Comment te décrirais-tu globalement ?',
       options: [
-        { label: 'Clairement du matin', score: 5 },
+        { label: 'Définitivement du matin', score: 5 },
         { label: 'Plutôt du matin', score: 4 },
         { label: 'Ni l\'un ni l\'autre', score: 3 },
         { label: 'Plutôt du soir', score: 2 },
-        { label: 'Clairement du soir', score: 1 }
+        { label: 'Définitivement du soir', score: 1 }
       ]
     }
   ];
 
-  // Profils chronotypes avec créneaux optimaux
   const CHRONOTYPE_PROFILES = {
     matinal: {
-      label: 'Matinal',
-      icon: '\u{1F305}',
-      description: 'Tu es plus efficace le matin ! Ton cerveau est au top de sa forme en début de journée. Profite de cette énergie pour les tâches les plus exigeantes.',
-      optimalSlots: ['8h-12h', '14h-16h'],
-      slotLabels: ['Créneau principal (haute énergie)', 'Créneau secondaire']
+      icon: '\u2600\uFE0F',
+      label: 'Profil Matinal',
+      desc: 'Tu es naturellement plus productif·ve le matin. Ton pic de concentration se situe en début de journée. Profite de ces moments pour les tâches les plus exigeantes.',
+      slots: [
+        { time: '8h - 12h', label: 'Pic de concentration' },
+        { time: '14h - 16h', label: 'Deuxième créneau' }
+      ],
+      preferred: ['08:00-12:00', '14:00-16:00']
     },
     intermediaire: {
-      label: 'Intermédiaire',
-      icon: '\u{2600}\u{FE0F}',
-      description: 'Tu as un rythme équilibré avec des pics d\'énergie en milieu de journée. Tu peux adapter tes horaires assez librement.',
-      optimalSlots: ['10h-12h', '15h-18h'],
-      slotLabels: ['Créneau matinal', 'Créneau après-midi (haute énergie)']
+      icon: '\u26C5',
+      label: 'Profil Intermédiaire',
+      desc: 'Tu as un rythme équilibré avec une bonne énergie en milieu de journée. Tu peux étudier efficacement sur de larges plages horaires.',
+      slots: [
+        { time: '10h - 12h', label: 'Pic de concentration' },
+        { time: '15h - 18h', label: 'Deuxième créneau' }
+      ],
+      preferred: ['10:00-12:00', '15:00-18:00']
     },
-    vespertinus: {
-      label: 'Vespéral',
-      icon: '\u{1F319}',
-      description: 'Tu es plus efficace l\'après-midi et le soir ! C\'est normal \u2014 beaucoup d\'ados ont ce profil. Planifie tes tâches difficiles en fin de journée.',
-      optimalSlots: ['14h-17h', '19h-21h'],
-      slotLabels: ['Créneau après-midi (haute énergie)', 'Créneau soirée']
+    vesperal: {
+      icon: '\uD83C\uDF19',
+      label: 'Profil Vespéral',
+      desc: 'Tu es plus efficace en fin de journée et le soir. Ton cerveau se met en marche progressivement et atteint son pic dans l\'après-midi.',
+      slots: [
+        { time: '14h - 17h', label: 'Pic de concentration' },
+        { time: '19h - 21h', label: 'Deuxième créneau' }
+      ],
+      preferred: ['14:00-17:00', '19:00-21:00']
     }
   };
 
-  // ---- Références DOM ----
-  const $ = (sel) => document.querySelector(sel);
-  const $$ = (sel) => document.querySelectorAll(sel);
+  // ==================================================================
+  // INITIALISATION
+  // ==================================================================
 
-  // Onglets de navigation
-  const appHeader   = $('#appHeader');
-  const appNav      = $('#appNav');
-  const tabMain     = $('#tabMain');
-  const tabHistory  = $('#tabHistory');
-  const tabFlashcards = $('#tabFlashcards');
-  const tabDashboard = $('#tabDashboard');
-
-  // Vues principales
-  const viewContract = $('#viewContract');
-  const viewLocked   = $('#viewLocked');
-  const viewTimer    = $('#viewTimer');
-
-  // Formulaire de contrat
-  const taskListEl      = $('#taskList');
-  const btnAddTask      = $('#btnAddTask');
-  const btnLockContract = $('#btnLockContract');
-  const btnLoadDemo     = $('#btnLoadDemo');
-
-  // Suggestion de créneau
-  const suggestionCreneau     = $('#suggestionCreneau');
-  const suggestionCreneauText = $('#suggestionCreneauText');
-
-  // Badge créneau optimal
-  const badgeCreneauOptimal = $('#badgeCreneauOptimal');
-
-  // Vue verrouillée
-  const progressSummary = $('#progressSummary');
-  const lockedTaskList  = $('#lockedTaskList');
-  const btnResetDay     = $('#btnResetDay');
-
-  // Réinitialisation complète
-  const btnResetApp = $('#btnResetApp');
-
-  // Timer
-  const timerTaskName     = $('#timerTaskName');
-  const timerSubject      = $('#timerSubject');
-  const timerDigits       = $('#timerDigits');
-  const timerRingProgress = $('#timerRingProgress');
-  const btnPause          = $('#btnPause');
-  const btnFinish         = $('#btnFinish');
-  const btnAbandon        = $('#btnAbandon');
-  const btnBackToList     = $('#btnBackToList');
-  const chkSound          = $('#chkSound');
-  const breakSuggestion   = $('#breakSuggestion');
-  const breakDuration     = $('#breakDuration');
-  const btnDismissBreak   = $('#btnDismissBreak');
-
-  // Dialogue de confirmation
-  const confirmDialog  = $('#confirmDialog');
-  const confirmMessage = $('#confirmMessage');
-  const btnConfirmYes  = $('#btnConfirmYes');
-  const btnConfirmNo   = $('#btnConfirmNo');
-
-  // Modal récupération active
-  const recallModal     = $('#recallModal');
-  const recallTextarea  = $('#recallTextarea');
-  const recallCharCount = $('#recallCharCount');
-  const btnRecallSave   = $('#btnRecallSave');
-  const btnRecallSkip   = $('#btnRecallSkip');
-
-  // Modal évaluation qualité
-  const qualityModal        = $('#qualityModal');
-  const qualityStarsEl      = $('#qualityStars');
-  const qualitySelectedLabel = $('#qualitySelectedLabel');
-  const btnQualitySave      = $('#btnQualitySave');
-  const btnQualitySkip      = $('#btnQualitySkip');
-
-  // Modal détail résumé
-  const summaryDetailModal = $('#summaryDetailModal');
-  const summaryDetailTitle = $('#summaryDetailTitle');
-  const summaryDetailText  = $('#summaryDetailText');
-  const btnCloseSummaryDetail = $('#btnCloseSummaryDetail');
-
-  // Onboarding
-  const onboardingScreen      = $('#onboardingScreen');
-  const onboardingProgressBar = $('#onboardingProgressBar');
-  const onboardingStepLabel   = $('#onboardingStepLabel');
-  const onboardingQuestions   = $('#onboardingQuestions');
-  const btnOnboardingPrev     = $('#btnOnboardingPrev');
-  const btnOnboardingNext     = $('#btnOnboardingNext');
-  const btnOnboardingSkip     = $('#btnOnboardingSkip');
-
-  // Résultat chronotype
-  const chronotypeResultScreen = $('#chronotypeResultScreen');
-  const chronotypeIcon         = $('#chronotypeIcon');
-  const chronotypeResultTitle  = $('#chronotypeResultTitle');
-  const chronotypeResultDesc   = $('#chronotypeResultDesc');
-  const chronotypeSlotsList    = $('#chronotypeSlotsList');
-  const btnStartApp            = $('#btnStartApp');
-
-  // Flashcards tab
-  const flashcardStats         = $('#flashcardStats');
-  const flashcardFilterSubject = $('#flashcardFilterSubject');
-  const btnStartReview         = $('#btnStartReview');
-  const btnCreateManualFlashcard = $('#btnCreateManualFlashcard');
-  const flashcardList          = $('#flashcardList');
-  const flashcardEmpty         = $('#flashcardEmpty');
-
-  // Flashcard suggestion modal
-  const flashcardSuggestionModal = $('#flashcardSuggestionModal');
-  const flashcardSuggestionHint = $('#flashcardSuggestionHint');
-  const flashcardSuggestionList = $('#flashcardSuggestionList');
-  const btnFlashcardSuggestionSave = $('#btnFlashcardSuggestionSave');
-  const btnFlashcardSuggestionSkip = $('#btnFlashcardSuggestionSkip');
-
-  // Manual flashcard modal
-  const flashcardManualModal     = $('#flashcardManualModal');
-  const manualFlashcardQuestion  = $('#manualFlashcardQuestion');
-  const manualFlashcardAnswer    = $('#manualFlashcardAnswer');
-  const manualFlashcardSubject   = $('#manualFlashcardSubject');
-  const btnManualFlashcardSave   = $('#btnManualFlashcardSave');
-  const btnManualFlashcardCancel = $('#btnManualFlashcardCancel');
-
-  // Flashcard review modal
-  const flashcardReviewModal   = $('#flashcardReviewModal');
-  const reviewProgress         = $('#reviewProgress');
-  const btnCloseReview         = $('#btnCloseReview');
-  const flashcardFlipContainer = $('#flashcardFlipContainer');
-  const flashcardFlipInner     = $('#flashcardFlipInner');
-  const reviewQuestionText     = $('#reviewQuestionText');
-  const reviewAnswerText       = $('#reviewAnswerText');
-  const btnRevealAnswer        = $('#btnRevealAnswer');
-  const reviewButtons          = $('#reviewButtons');
-  const btnReviewKnew          = $('#btnReviewKnew');
-  const btnReviewRetry         = $('#btnReviewRetry');
-  const reviewSubject          = $('#reviewSubject');
-
-  // Dashboard chronotype card
-  const chronotypeCard      = $('#chronotypeCard');
-  const chronotypeCardIcon  = $('#chronotypeCardIcon');
-  const chronotypeCardLabel = $('#chronotypeCardLabel');
-  const chronotypeCardDate  = $('#chronotypeCardDate');
-  const btnRefaireChronotype = $('#btnRefaireChronotype');
-
-  // Historique
-  const historyList  = $('#historyList');
-  const historyEmpty = $('#historyEmpty');
-  const btnExportCSV = $('#btnExportCSV');
-
-  // Toast
-  const toastEl = $('#toast');
-
-  // ---- État applicatif ----
-  let contract = null;         // { id?, date, locked, tasks: [...] }
-  let timerInterval = null;
-  let timerRemaining = 0;      // secondes restantes
-  let timerTotal = 0;           // durée totale en secondes
-  let timerPaused = false;
-  let currentTaskIndex = -1;
-  let confirmCallback = null;   // fonction appelée si l'utilisateur confirme
-  let timerStartTime = null;    // timestamp de début de session
-  let timerPausedTotal = 0;     // temps total en pause (en ms)
-  let timerPauseStart = null;   // timestamp du début de la pause en cours
-  let recallCallback = null;    // callback après le modal de récupération active
-  let qualityCallback = null;   // callback après le modal de qualité
-  let selectedQuality = 0;      // étoiles sélectionnées (1-5 ou 0=rien)
-  let activeTab = 'main';      // onglet actif
-
-  // État onboarding
-  let onboardingStep = 0;       // question courante (0-4)
-  let onboardingAnswers = [];   // scores sélectionnés pour chaque question
-
-  // État flashcard review
-  let reviewCards = [];          // cartes à réviser dans la session
-  let reviewIndex = 0;           // index courant dans reviewCards
-  let reviewFlipped = false;     // la carte est-elle retournée ?
-
-  // Suggestions de flashcards en attente (après un résumé)
-  let pendingSuggestions = [];
-  let pendingSuggestionSubject = '';
-  let pendingSuggestionTaskName = '';
-
-  // ---- Initialisation ----
-  async function init() {
-    afficherDate();
-
-    // Initialiser IndexedDB (migration automatique)
+  document.addEventListener('DOMContentLoaded', async () => {
     await StudyDB.init();
 
-    // Vérifier s'il y a une première utilisation
+    // Charger les tooltips déjà vus
+    try {
+      tooltipsShown = JSON.parse(localStorage.getItem('studyproto_tooltips_shown') || '{}');
+    } catch (_) { tooltipsShown = {}; }
+
+    // Appliquer le thème
+    appliquerTheme();
+
+    // Afficher la date
+    afficherDate();
+
+    // Vérifier si première utilisation
     const premiere = await StudyDB.estPremiereUtilisation();
     if (premiere) {
-      masquerAppPrincipale();
-      demarrerOnboarding();
+      afficherWelcomeScreen();
     } else {
-      demarrerApp();
+      await chargerContratDuJour();
+    }
+
+    // Attacher les événements
+    attacherEvenements();
+
+    // Service Worker
+    enregistrerSW();
+  });
+
+  function afficherDate() {
+    const el = document.getElementById('currentDate');
+    if (el) {
+      const now = new Date();
+      el.textContent = now.toLocaleDateString('fr-BE', {
+        weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+      });
     }
   }
 
-  /** Cache le header et la navigation pour l'onboarding */
-  function masquerAppPrincipale() {
-    if (appHeader) appHeader.classList.add('hidden');
-    if (appNav) appNav.classList.add('hidden');
-    if (tabMain) tabMain.classList.add('hidden');
-  }
-
-  /** Affiche le header et la navigation */
-  function afficherAppPrincipale() {
-    if (appHeader) appHeader.classList.remove('hidden');
-    if (appNav) appNav.classList.remove('hidden');
-    if (tabMain) tabMain.classList.remove('hidden');
-  }
-
-  /** Démarre l'application normale (après onboarding ou si déjà utilisé) */
-  async function demarrerApp() {
-    // Masquer les écrans d'onboarding
-    if (onboardingScreen) onboardingScreen.classList.add('hidden');
-    if (chronotypeResultScreen) chronotypeResultScreen.classList.add('hidden');
-    afficherAppPrincipale();
-
-    // Charger le contrat du jour
-    await chargerContrat();
-
-    // Vérifier s'il y a une session interrompue à restaurer
-    restaurerSessionInterrompue();
-
-    // Afficher la suggestion de créneau si disponible
-    afficherSuggestionCreneau();
-    afficherBadgeCreneauOptimal();
-
-    attacherEvenements();
-    enregistrerServiceWorker();
-  }
-
-  // ============================================================
-  // QUESTIONNAIRE CHRONOTYPE (ONBOARDING)
-  // ============================================================
-
-  /** Démarre le questionnaire d'onboarding */
-  function demarrerOnboarding() {
-    onboardingStep = 0;
-    onboardingAnswers = new Array(CHRONOTYPE_QUESTIONS.length).fill(null);
-
-    genererQuestionsOnboarding();
-    mettreAJourOnboarding();
-
-    onboardingScreen.classList.remove('hidden');
-
-    // Événements onboarding
-    btnOnboardingPrev.addEventListener('click', onboardingPrecedent);
-    btnOnboardingNext.addEventListener('click', onboardingSuivant);
-    btnOnboardingSkip.addEventListener('click', onboardingPasser);
-  }
-
-  /** Génère le HTML des 5 questions dans le conteneur */
-  function genererQuestionsOnboarding() {
-    onboardingQuestions.innerHTML = '';
-
-    CHRONOTYPE_QUESTIONS.forEach((q, qIdx) => {
-      const div = document.createElement('div');
-      div.className = 'onboarding-question' + (qIdx === 0 ? '' : ' hidden');
-      div.dataset.qindex = qIdx;
-
-      let optionsHtml = '';
-      q.options.forEach((opt, oIdx) => {
-        optionsHtml += `
-          <label class="onboarding-option">
-            <input type="radio" name="chrono_q${qIdx}" value="${opt.score}" data-qindex="${qIdx}">
-            <span class="onboarding-option-label">${escapeHtml(opt.label)}</span>
-          </label>
-        `;
-      });
-
-      div.innerHTML = `
-        <p class="onboarding-question-text">${escapeHtml(q.question)}</p>
-        <div class="onboarding-options">${optionsHtml}</div>
-      `;
-
-      onboardingQuestions.appendChild(div);
-
-      // Écouter les changements de radio
-      div.querySelectorAll('input[type="radio"]').forEach((radio) => {
-        radio.addEventListener('change', () => {
-          onboardingAnswers[qIdx] = parseInt(radio.value, 10);
-          mettreAJourOnboarding();
+  function enregistrerSW() {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').then((reg) => {
+        // Vérifier mise à jour
+        reg.addEventListener('updatefound', () => {
+          const newWorker = reg.installing;
+          if (newWorker) {
+            newWorker.addEventListener('statechange', () => {
+              if (newWorker.state === 'activated' && navigator.serviceWorker.controller) {
+                afficherToast('Nouvelle version disponible. Recharge la page.');
+              }
+            });
+          }
         });
+      }).catch(() => {});
+    }
+  }
+
+  // ==================================================================
+  // THÈME SOMBRE
+  // ==================================================================
+
+  function appliquerTheme() {
+    const saved = localStorage.getItem('studyproto_theme') || 'light';
+    const radios = document.querySelectorAll('input[name="theme"]');
+    radios.forEach((r) => { if (r.value === saved) r.checked = true; });
+    setTheme(saved);
+  }
+
+  function setTheme(mode) {
+    if (mode === 'auto') {
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+    } else {
+      document.documentElement.setAttribute('data-theme', mode);
+    }
+    localStorage.setItem('studyproto_theme', mode);
+    // Update meta theme-color
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) {
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      meta.setAttribute('content', isDark ? '#1a1a2e' : '#4a7c8a');
+    }
+  }
+
+  // ==================================================================
+  // WELCOME SLIDES (première visite)
+  // ==================================================================
+
+  function afficherWelcomeScreen() {
+    document.getElementById('appHeader').classList.add('hidden');
+    document.getElementById('appNav').classList.add('hidden');
+    document.getElementById('app').classList.add('hidden');
+    document.getElementById('appFooter').classList.add('hidden');
+    document.getElementById('welcomeScreen').classList.remove('hidden');
+    welcomeSlide = 0;
+    renderWelcomeSlide();
+  }
+
+  function renderWelcomeSlide() {
+    const slides = document.querySelectorAll('.welcome-slide');
+    const dots = document.querySelectorAll('.welcome-dot');
+    slides.forEach((s, i) => s.classList.toggle('hidden', i !== welcomeSlide));
+    dots.forEach((d, i) => d.classList.toggle('active', i === welcomeSlide));
+    const btn = document.getElementById('btnWelcomeNext');
+    btn.textContent = welcomeSlide === 3 ? 'C\'est parti !' : 'Suivant';
+  }
+
+  function nextWelcomeSlide() {
+    if (welcomeSlide < 3) {
+      welcomeSlide++;
+      renderWelcomeSlide();
+    } else {
+      // Fin des slides → questionnaire chronotype
+      document.getElementById('welcomeScreen').classList.add('hidden');
+      afficherOnboarding();
+    }
+  }
+
+  // ==================================================================
+  // ONBOARDING CHRONOTYPE
+  // ==================================================================
+
+  function afficherOnboarding() {
+    document.getElementById('appHeader').classList.add('hidden');
+    document.getElementById('appNav').classList.add('hidden');
+    document.getElementById('app').classList.add('hidden');
+    document.getElementById('appFooter').classList.add('hidden');
+    document.getElementById('onboardingScreen').classList.remove('hidden');
+    onboardingStep = 0;
+    onboardingAnswers = [0, 0, 0, 0, 0];
+    rendreQuestionOnboarding();
+  }
+
+  function rendreQuestionOnboarding() {
+    const q = CHRONOTYPE_QUESTIONS[onboardingStep];
+    const container = document.getElementById('onboardingQuestions');
+    const progressBar = document.getElementById('onboardingProgressBar');
+    const stepLabel = document.getElementById('onboardingStepLabel');
+    const btnPrev = document.getElementById('btnOnboardingPrev');
+    const btnNext = document.getElementById('btnOnboardingNext');
+
+    progressBar.style.width = ((onboardingStep + 1) * 20) + '%';
+    stepLabel.textContent = 'Question ' + (onboardingStep + 1) + ' / 5';
+    btnPrev.disabled = onboardingStep === 0;
+
+    let html = '<p class="onboarding-question-text">' + escapeHtml(q.text) + '</p>';
+    html += '<div class="onboarding-options">';
+    q.options.forEach((opt, i) => {
+      const checked = onboardingAnswers[onboardingStep] === opt.score ? 'checked' : '';
+      html += '<label class="onboarding-option">';
+      html += '<input type="radio" name="chronoQ' + onboardingStep + '" value="' + opt.score + '" ' + checked + '>';
+      html += '<span class="onboarding-option-label">' + escapeHtml(opt.label) + '</span>';
+      html += '</label>';
+    });
+    html += '</div>';
+    container.innerHTML = html;
+
+    // Événements radios
+    container.querySelectorAll('input[type="radio"]').forEach((radio) => {
+      radio.addEventListener('change', () => {
+        onboardingAnswers[onboardingStep] = parseInt(radio.value);
+        btnNext.disabled = false;
       });
     });
+
+    btnNext.disabled = onboardingAnswers[onboardingStep] === 0;
+    btnNext.textContent = onboardingStep === 4 ? 'Voir mon profil' : 'Suivant \u2192';
   }
 
-  /** Met à jour l'affichage de l'onboarding (progression, boutons) */
-  function mettreAJourOnboarding() {
-    const total = CHRONOTYPE_QUESTIONS.length;
-    const pct = ((onboardingStep + 1) / total) * 100;
-
-    onboardingProgressBar.style.width = pct + '%';
-    onboardingStepLabel.textContent = `Question ${onboardingStep + 1} / ${total}`;
-
-    // Afficher uniquement la question courante
-    onboardingQuestions.querySelectorAll('.onboarding-question').forEach((div) => {
-      const idx = parseInt(div.dataset.qindex, 10);
-      div.classList.toggle('hidden', idx !== onboardingStep);
-    });
-
-    // Bouton précédent
-    btnOnboardingPrev.disabled = onboardingStep === 0;
-
-    // Bouton suivant : actif seulement si une réponse est sélectionnée
-    const aRepondu = onboardingAnswers[onboardingStep] !== null;
-    const estDernier = onboardingStep === total - 1;
-
-    btnOnboardingNext.disabled = !aRepondu;
-    btnOnboardingNext.textContent = estDernier ? 'Voir mon profil' : 'Suivant \u2192';
-  }
-
-  function onboardingPrecedent() {
+  function onboardingPrevious() {
     if (onboardingStep > 0) {
       onboardingStep--;
-      mettreAJourOnboarding();
+      rendreQuestionOnboarding();
     }
   }
 
-  function onboardingSuivant() {
-    if (onboardingAnswers[onboardingStep] === null) return;
-
-    if (onboardingStep < CHRONOTYPE_QUESTIONS.length - 1) {
+  function onboardingNext() {
+    if (onboardingStep < 4) {
       onboardingStep++;
-      mettreAJourOnboarding();
+      rendreQuestionOnboarding();
     } else {
-      // Dernière question : calculer le résultat
-      finaliserChronotype();
+      calculerChronotype();
     }
   }
 
-  /** Passe l'onboarding et lance l'app directement */
-  function onboardingPasser() {
-    onboardingScreen.classList.add('hidden');
-    demarrerApp();
+  function skipOnboarding() {
+    document.getElementById('onboardingScreen').classList.add('hidden');
+    montrerApp();
   }
 
-  /** Calcule le score chronotype et affiche le résultat */
-  async function finaliserChronotype() {
-    const score = onboardingAnswers.reduce((sum, s) => sum + (s || 0), 0);
+  async function calculerChronotype() {
+    const totalScore = onboardingAnswers.reduce((a, b) => a + b, 0);
+    let profil;
+    if (totalScore >= 19) profil = 'matinal';
+    else if (totalScore >= 12) profil = 'intermediaire';
+    else profil = 'vesperal';
 
-    // Déterminer le profil : 5-11 vespertinus, 12-18 intermédiaire, 19-25 matinal
-    let chronotypeKey;
-    if (score >= 19) {
-      chronotypeKey = 'matinal';
-    } else if (score >= 12) {
-      chronotypeKey = 'intermediaire';
-    } else {
-      chronotypeKey = 'vespertinus';
-    }
+    const profile = CHRONOTYPE_PROFILES[profil];
 
-    const profil = CHRONOTYPE_PROFILES[chronotypeKey];
-
-    // Sauvegarder les préférences
+    // Sauvegarder
     const prefs = {
-      preferredTimeSlots: profil.optimalSlots,
-      detectedChronotype: chronotypeKey,
-      chronotypeScore: score,
-      chronotypeLabel: profil.label,
-      optimalTimeSlots: profil.optimalSlots,
+      preferredTimeSlots: profile.preferred,
+      detectedChronotype: profil,
+      chronotypeScore: totalScore,
+      chronotypeLabel: profile.label,
+      optimalTimeSlots: profile.slots.map((s) => s.time),
       questionnaireDate: Date.now(),
       lastUpdated: Date.now()
     };
     await StudyDB.sauvegarderPreferences(prefs);
 
-    // Afficher l'écran de résultat
-    afficherResultatChronotype(profil, score);
+    // Afficher résultat
+    document.getElementById('onboardingScreen').classList.add('hidden');
+    document.getElementById('chronotypeResultScreen').classList.remove('hidden');
+
+    document.getElementById('chronotypeIcon').textContent = profile.icon;
+    document.getElementById('chronotypeResultTitle').textContent = 'Ton profil : ' + profile.label;
+    document.getElementById('chronotypeResultDesc').textContent = profile.desc;
+
+    const slotsList = document.getElementById('chronotypeSlotsList');
+    slotsList.innerHTML = profile.slots.map((s) =>
+      '<div class="chronotype-slot-item">' +
+      '<span class="chronotype-slot-time">' + s.time + '</span>' +
+      '<span class="chronotype-slot-label">' + s.label + '</span>' +
+      '</div>'
+    ).join('');
   }
 
-  /** Affiche l'écran de résultat du chronotype */
-  function afficherResultatChronotype(profil, score) {
-    onboardingScreen.classList.add('hidden');
-    chronotypeResultScreen.classList.remove('hidden');
+  function startAppAfterOnboarding() {
+    document.getElementById('chronotypeResultScreen').classList.add('hidden');
+    montrerApp();
+  }
 
-    chronotypeIcon.textContent = profil.icon;
-    chronotypeResultTitle.textContent = 'Ton profil : ' + profil.label;
-    chronotypeResultDesc.textContent = profil.description;
+  function montrerApp() {
+    document.getElementById('appHeader').classList.remove('hidden');
+    document.getElementById('appNav').classList.remove('hidden');
+    document.getElementById('app').classList.remove('hidden');
+    document.getElementById('appFooter').classList.remove('hidden');
+    chargerContratDuJour();
+  }
 
-    // Afficher les créneaux optimaux
-    chronotypeSlotsList.innerHTML = '';
-    profil.optimalSlots.forEach((slot, i) => {
-      const div = document.createElement('div');
-      div.className = 'chronotype-slot-item';
-      div.innerHTML = `
-        <span class="chronotype-slot-time">${escapeHtml(slot)}</span>
-        <span class="chronotype-slot-label">${escapeHtml(profil.slotLabels[i])}</span>
-      `;
-      chronotypeSlotsList.appendChild(div);
+  // ==================================================================
+  // NAVIGATION PAR ONGLETS
+  // ==================================================================
+
+  function changerOnglet(tab) {
+    activeTab = tab;
+    const tabs = ['tabMain', 'tabDashboard', 'tabFlashcards', 'tabHistory', 'tabSettings'];
+    const tabMap = { main: 'tabMain', dashboard: 'tabDashboard', flashcards: 'tabFlashcards', history: 'tabHistory', settings: 'tabSettings' };
+    tabs.forEach((t) => {
+      const el = document.getElementById(t);
+      if (el) el.classList.toggle('hidden', t !== tabMap[tab]);
+    });
+    document.querySelectorAll('.nav-tab').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.tab === tab);
     });
 
-    // Bouton pour démarrer l'app
-    btnStartApp.addEventListener('click', () => {
-      chronotypeResultScreen.classList.add('hidden');
-      demarrerApp();
-    });
-  }
-
-  // Affiche la date du jour dans l'en-tête
-  function afficherDate() {
-    const options = { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' };
-    $('#currentDate').textContent = new Date().toLocaleDateString('fr-BE', options);
-  }
-
-  // ---- Persistance IndexedDB (via module StudyDB) ----
-
-  async function sauvegarderContrat() {
-    if (!contract) return;
-    await StudyDB.sauvegarderContrat(contract);
-  }
-
-  async function chargerContrat() {
-    const today = new Date().toISOString().slice(0, 10);
-    const saved = await StudyDB.getContratParDate(today);
-
-    if (saved) {
-      contract = saved;
-      if (contract.locked) {
-        afficherVueVerrouillee();
-      } else {
-        restaurerFormulaire();
-      }
-    } else {
-      // Nouveau jour ou pas de contrat : formulaire vierge
-      contract = null;
-      creerFormulaireInitial();
+    // Charger le contenu de l'onglet
+    if (tab === 'dashboard') {
+      StudyDashboard.afficherDashboard();
+      afficherChronotypeCard();
+      showTooltip('dashboard', 'Ton heatmap se remplira au fur et à mesure de tes sessions. Plus tu travailles, plus les patterns apparaissent.');
+    } else if (tab === 'flashcards') {
+      afficherFlashcards();
+    } else if (tab === 'history') {
+      historyOffset = 0;
+      chargerHistorique();
+    } else if (tab === 'settings') {
+      chargerParametres();
     }
   }
 
-  // ---- Suggestion de créneau horaire (intégration patterns) ----
+  // ==================================================================
+  // CONTRAT QUOTIDIEN
+  // ==================================================================
+
+  async function chargerContratDuJour() {
+    const today = new Date().toISOString().slice(0, 10);
+    contratDuJour = await StudyDB.getContratParDate(today);
+
+    if (contratDuJour && contratDuJour.locked) {
+      afficherContratVerrouille();
+    } else {
+      afficherFormulaireContrat();
+    }
+
+    // Suggestion créneau
+    await afficherSuggestionCreneau();
+  }
 
   async function afficherSuggestionCreneau() {
     const suggestion = await StudyDashboard.getSuggestionContrat();
+    const el = document.getElementById('suggestionCreneau');
+    const txt = document.getElementById('suggestionCreneauText');
     if (!suggestion || !suggestion.creneaux || suggestion.creneaux.length === 0) {
-      suggestionCreneau.classList.add('hidden');
+      el.classList.add('hidden');
       return;
     }
-
-    const creneau = suggestion.creneaux[0];
-    suggestionCreneauText.textContent =
-      'Suggestion : planifie tes t\u00e2ches difficiles entre ' + creneau + ' (ton cr\u00e9neau le plus efficace)';
-    suggestionCreneau.classList.remove('hidden');
-  }
-
-  /** Affiche un badge avec le créneau optimal si un chronotype est défini */
-  async function afficherBadgeCreneauOptimal() {
-    if (!badgeCreneauOptimal) return;
     const prefs = await StudyDB.getPreferences();
-    if (!prefs || !prefs.chronotypeLabel || !prefs.optimalTimeSlots) {
-      badgeCreneauOptimal.classList.add('hidden');
-      return;
-    }
-
-    const profil = CHRONOTYPE_PROFILES[prefs.detectedChronotype];
-    if (!profil) {
-      badgeCreneauOptimal.classList.add('hidden');
-      return;
-    }
-
-    const heure = new Date().getHours();
-    const dansCreneauOptimal = estDansCreneauOptimal(heure, prefs.optimalTimeSlots);
-
-    if (dansCreneauOptimal) {
-      badgeCreneauOptimal.innerHTML = profil.icon + ' Tu es dans ton cr\u00e9neau optimal !';
-      badgeCreneauOptimal.className = 'badge-creneau badge-creneau-actif';
+    if (prefs && prefs.chronotypeLabel) {
+      txt.textContent = prefs.chronotypeLabel + ' — Tes créneaux optimaux : ' + suggestion.creneaux.join(', ');
     } else {
-      badgeCreneauOptimal.innerHTML = profil.icon + ' Profil ' + prefs.chronotypeLabel + ' \u2014 optimal : ' + prefs.optimalTimeSlots[0];
-      badgeCreneauOptimal.className = 'badge-creneau';
+      txt.textContent = 'Tes créneaux optimaux détectés : ' + suggestion.creneaux.join(', ');
     }
+    el.classList.remove('hidden');
   }
 
-  /** Vérifie si l'heure actuelle est dans un créneau optimal */
-  function estDansCreneauOptimal(heure, slots) {
-    for (const slot of slots) {
-      const match = slot.match(/(\d+)h-(\d+)h/);
-      if (match) {
-        const debut = parseInt(match[1], 10);
-        const fin = parseInt(match[2], 10);
-        if (heure >= debut && heure < fin) return true;
-      }
+  function afficherFormulaireContrat() {
+    show('viewContract'); hide('viewLocked'); hide('viewTimer');
+
+    const taskList = document.getElementById('taskList');
+    if (contratDuJour && contratDuJour.tasks && contratDuJour.tasks.length > 0) {
+      taskList.innerHTML = '';
+      contratDuJour.tasks.forEach((t, i) => ajouterChampsTask(i, t));
+    } else {
+      taskList.innerHTML = '';
+      ajouterChampsTask(0);
     }
-    return false;
+    validerFormulaire();
   }
 
-  // ---- Sauvegarde / restauration de session interrompue ----
-
-  /** Sauvegarde l'état du timer pour récupération en cas de refresh */
-  function sauvegarderEtatTimer() {
-    if (currentTaskIndex < 0) return;
-    const state = {
-      taskIndex: currentTaskIndex,
-      remaining: timerRemaining,
-      total: timerTotal,
-      paused: timerPaused,
-      startTime: timerStartTime,
-      pausedTotal: timerPausedTotal,
-      pauseStart: timerPauseStart,
-      timestamp: Date.now()
-    };
-    localStorage.setItem(TIMER_STATE_KEY, JSON.stringify(state));
-  }
-
-  /** Supprime l'état de timer sauvegardé */
-  function effacerEtatTimer() {
-    localStorage.removeItem(TIMER_STATE_KEY);
-  }
-
-  /** Restaure une session si la page a été rafraîchie pendant le timer */
-  function restaurerSessionInterrompue() {
-    const raw = localStorage.getItem(TIMER_STATE_KEY);
-    if (!raw || !contract || !contract.locked) {
-      effacerEtatTimer();
-      return;
-    }
-
-    try {
-      const state = JSON.parse(raw);
-      const elapsed = Math.floor((Date.now() - state.timestamp) / 1000);
-
-      // Si plus de 5 minutes se sont écoulées, la session est considérée abandonnée
-      if (elapsed > 300) {
-        effacerEtatTimer();
-        return;
-      }
-
-      // Vérifier que la tâche existe et n'est pas déjà terminée
-      if (!contract.tasks[state.taskIndex] || contract.tasks[state.taskIndex].done) {
-        effacerEtatTimer();
-        return;
-      }
-
-      // Restaurer le timer avec le temps écoulé déduit
-      currentTaskIndex = state.taskIndex;
-      const task = contract.tasks[currentTaskIndex];
-
-      timerTaskName.textContent = task.name;
-      timerSubject.textContent = task.subject || '';
-      timerTotal = state.total;
-      timerRemaining = Math.max(0, state.remaining - elapsed);
-      timerPaused = true; // Reprendre en pause pour laisser l'utilisateur choisir
-      timerStartTime = state.startTime;
-      timerPausedTotal = state.pausedTotal + (Date.now() - state.timestamp);
-      timerPauseStart = Date.now();
-
-      btnPause.textContent = 'Reprendre';
-      breakSuggestion.classList.add('hidden');
-      mettreAJourAffichageTimer();
-      afficherVue('viewTimer');
-
-      // Démarrer le compte à rebours (en pause)
-      demarrerCompteARebours();
-
-      afficherToast('Session restaur\u00e9e \u2014 en pause');
-    } catch (_) {
-      effacerEtatTimer();
-    }
-  }
-
-  // ---- Formulaire de création du contrat ----
-
-  function creerFormulaireInitial() {
-    taskListEl.innerHTML = '';
-    for (let i = 0; i < MIN_TASKS; i++) {
-      ajouterCarteTache();
-    }
-    mettreAJourBoutons();
-    afficherVue('viewContract');
-  }
-
-  function restaurerFormulaire() {
-    taskListEl.innerHTML = '';
-    contract.tasks.forEach((t) => {
-      ajouterCarteTache(t);
-    });
-    mettreAJourBoutons();
-    afficherVue('viewContract');
-  }
-
-  function ajouterCarteTache(data) {
-    const index = taskListEl.children.length;
+  function ajouterChampsTask(index, data) {
+    const taskList = document.getElementById('taskList');
     const card = document.createElement('div');
     card.className = 'task-card';
     card.dataset.index = index;
 
-    const diffVal = (data && data.difficulty) || 2;
-    const diffText = DIFFICULTY_LABELS[diffVal];
+    const diff = data ? data.difficulty : 2;
+    card.innerHTML =
+      '<div class="task-card-header">' +
+      '<span class="task-number">T\u00e2che ' + (index + 1) + '</span>' +
+      '<button class="btn-remove-task" type="button" title="Supprimer">\u00D7</button>' +
+      '</div>' +
+      '<div class="field"><label>Nom de la t\u00e2che</label>' +
+      '<input type="text" class="task-name" placeholder="Ex : R\u00e9sum\u00e9 chapitre 4" value="' + escapeAttr(data ? data.name : '') + '"></div>' +
+      '<div class="field-row">' +
+      '<div class="field"><label>Mati\u00e8re</label>' +
+      '<input type="text" class="task-subject" placeholder="Ex : Maths" value="' + escapeAttr(data ? data.subject : '') + '"></div>' +
+      '<div class="field"><label>Dur\u00e9e</label>' +
+      '<select class="task-duration">' +
+      '<option value="25"' + (data && data.duration === 25 ? ' selected' : '') + '>25 min</option>' +
+      '<option value="50"' + (data && data.duration === 50 ? ' selected' : '') + '>50 min</option>' +
+      '</select></div></div>' +
+      '<div class="field"><label>Difficult\u00e9 : <span class="difficulty-label">' + DIFFICULTY_LABELS[diff] + '</span></label>' +
+      '<div class="difficulty-group">' +
+      '<input type="range" class="task-difficulty" min="1" max="3" value="' + diff + '">' +
+      '</div></div>';
 
-    card.innerHTML = `
-      <div class="task-card-header">
-        <span class="task-number">T\u00e2che ${index + 1}</span>
-        <button class="btn-remove-task" type="button" title="Supprimer cette t\u00e2che">&times;</button>
-      </div>
-      <div class="field">
-        <label>Nom de la t\u00e2che *</label>
-        <input type="text" class="input-name" placeholder="Ex : R\u00e9sum\u00e9 chapitre 4" value="${escapeHtml((data && data.name) || '')}" required>
-      </div>
-      <div class="field">
-        <label>Mati\u00e8re / contexte</label>
-        <input type="text" class="input-subject" placeholder="Ex : Fran\u00e7ais (optionnel)" value="${escapeHtml((data && data.subject) || '')}">
-      </div>
-      <div class="field-row">
-        <div class="field">
-          <label>Dur\u00e9e estim\u00e9e</label>
-          <select class="input-duration">
-            <option value="25" ${(data && data.duration === 50) ? '' : 'selected'}>25 minutes</option>
-            <option value="50" ${(data && data.duration === 50) ? 'selected' : ''}>50 minutes</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>Difficult\u00e9 per\u00e7ue</label>
-          <div class="difficulty-group">
-            <input type="range" class="input-difficulty" min="1" max="3" value="${diffVal}">
-            <span class="difficulty-label">${diffText}</span>
-          </div>
-        </div>
-      </div>
-    `;
+    taskList.appendChild(card);
 
-    taskListEl.appendChild(card);
-
-    // Événement slider difficulté
-    const slider = card.querySelector('.input-difficulty');
-    const label = card.querySelector('.difficulty-label');
-    slider.addEventListener('input', () => {
-      label.textContent = DIFFICULTY_LABELS[parseInt(slider.value, 10)];
-    });
-
-    // Événement suppression
+    // Événements
     card.querySelector('.btn-remove-task').addEventListener('click', () => {
       card.remove();
-      renumeroterCartes();
-      mettreAJourBoutons();
+      renumeroterTasks();
+      validerFormulaire();
     });
-
-    // Événement changement pour vérifier la validité
-    card.querySelector('.input-name').addEventListener('input', mettreAJourBoutons);
-  }
-
-  function renumeroterCartes() {
-    const cards = taskListEl.querySelectorAll('.task-card');
-    cards.forEach((c, i) => {
-      c.dataset.index = i;
-      c.querySelector('.task-number').textContent = 'T\u00e2che ' + (i + 1);
+    card.querySelector('.task-difficulty').addEventListener('input', (e) => {
+      card.querySelector('.difficulty-label').textContent = DIFFICULTY_LABELS[parseInt(e.target.value)];
+    });
+    card.querySelectorAll('input, select').forEach((el) => {
+      el.addEventListener('input', validerFormulaire);
     });
   }
 
-  function mettreAJourBoutons() {
-    const count = taskListEl.children.length;
-    btnAddTask.disabled = count >= MAX_TASKS;
-
-    const names = Array.from(taskListEl.querySelectorAll('.input-name'));
-    const filledCount = names.filter((n) => n.value.trim().length > 0).length;
-    btnLockContract.disabled = filledCount < MIN_TASKS;
+  function renumeroterTasks() {
+    document.querySelectorAll('.task-card').forEach((card, i) => {
+      card.dataset.index = i;
+      card.querySelector('.task-number').textContent = 'T\u00e2che ' + (i + 1);
+    });
   }
 
-  // ---- Lecture des données du formulaire ----
+  function validerFormulaire() {
+    const cards = document.querySelectorAll('.task-card');
+    const btnLock = document.getElementById('btnLockContract');
+    const btnAdd = document.getElementById('btnAddTask');
 
-  function lireTachesFormulaire() {
-    const cards = taskListEl.querySelectorAll('.task-card');
+    let valid = cards.length >= 1;
+    cards.forEach((card) => {
+      const name = card.querySelector('.task-name').value.trim();
+      if (!name) valid = false;
+    });
+
+    btnLock.disabled = !valid || cards.length < 1;
+    btnAdd.disabled = cards.length >= 5;
+
+    // Tooltip contextuel
+    if (cards.length === 1) {
+      showTooltip('contract', 'Limite-toi à 3-5 tâches maximum pour rester efficace.');
+    }
+  }
+
+  function ajouterNouvelleTache() {
+    const cards = document.querySelectorAll('.task-card');
+    if (cards.length >= 5) return;
+    ajouterChampsTask(cards.length);
+    validerFormulaire();
+  }
+
+  function chargerDemo() {
+    const demo = [
+      { name: 'Résumé chapitre 4', subject: 'Français', duration: 25, difficulty: 2 },
+      { name: 'Exercices équations', subject: 'Maths', duration: 50, difficulty: 3 },
+      { name: 'Relire notes cours', subject: 'Sciences', duration: 25, difficulty: 1 }
+    ];
+    document.getElementById('taskList').innerHTML = '';
+    demo.forEach((t, i) => ajouterChampsTask(i, t));
+    validerFormulaire();
+  }
+
+  async function verrouillerContrat() {
+    const cards = document.querySelectorAll('.task-card');
     const tasks = [];
-    cards.forEach((c) => {
-      const name = c.querySelector('.input-name').value.trim();
-      if (!name) return;
+    cards.forEach((card) => {
       tasks.push({
-        name: name,
-        subject: c.querySelector('.input-subject').value.trim(),
-        duration: parseInt(c.querySelector('.input-duration').value, 10),
-        difficulty: parseInt(c.querySelector('.input-difficulty').value, 10),
+        name: card.querySelector('.task-name').value.trim(),
+        subject: card.querySelector('.task-subject').value.trim(),
+        duration: parseInt(card.querySelector('.task-duration').value),
+        difficulty: parseInt(card.querySelector('.task-difficulty').value),
         done: false,
         sessionStatus: null
       });
     });
-    return tasks;
-  }
 
-  // ---- Verrouillage du contrat ----
-
-  async function verrouillerContrat() {
-    const tasks = lireTachesFormulaire();
-    if (tasks.length < MIN_TASKS) return;
-
-    contract = {
-      date: new Date().toISOString().slice(0, 10),
+    const today = new Date().toISOString().slice(0, 10);
+    contratDuJour = {
+      date: today,
       locked: true,
       tasks: tasks
     };
-    await sauvegarderContrat();
-    afficherVueVerrouillee();
+    if (contratDuJour.id) {
+      await StudyDB.sauvegarderContrat(contratDuJour);
+    } else {
+      const id = await StudyDB.sauvegarderContrat(contratDuJour);
+      if (id) contratDuJour.id = id;
+    }
+
+    afficherContratVerrouille();
   }
 
-  // ---- Vue contrat verrouillé ----
+  function afficherContratVerrouille() {
+    hide('viewContract'); show('viewLocked'); hide('viewTimer');
 
-  function afficherVueVerrouillee() {
-    afficherVue('viewLocked');
-    rendreListeVerrouillee();
-    rendreProgression();
-  }
+    const tasks = contratDuJour.tasks;
+    const done = tasks.filter((t) => t.done).length;
+    const total = tasks.length;
 
-  function rendreProgression() {
-    const total = contract.tasks.length;
-    const done = contract.tasks.filter((t) => t.done).length;
-    const pct = Math.round((done / total) * 100);
+    // Progression
+    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+    document.getElementById('progressSummary').innerHTML =
+      '<p class="progress-text">' + done + ' / ' + total + ' t\u00e2ches termin\u00e9es</p>' +
+      '<div class="progress-bar-wrapper"><div class="progress-bar-fill" style="width:' + pct + '%"></div></div>';
 
-    progressSummary.innerHTML = `
-      <p class="progress-text">${done} / ${total} t\u00e2che${total > 1 ? 's' : ''} accomplie${done > 1 ? 's' : ''}</p>
-      <div class="progress-bar-wrapper">
-        <div class="progress-bar-fill" style="width:${pct}%"></div>
-      </div>
-    `;
-  }
-
-  function rendreListeVerrouillee() {
-    lockedTaskList.innerHTML = '';
-    contract.tasks.forEach((task, idx) => {
+    // Liste
+    const list = document.getElementById('lockedTaskList');
+    list.innerHTML = '';
+    tasks.forEach((t, i) => {
       const li = document.createElement('li');
+      let className = 'locked-item';
+      let checkIcon = '';
+      let dotClass = 'status-dot-grey';
 
-      // Déterminer la classe de statut visuel
-      let statusClass = '';
-      if (task.done && task.sessionStatus === 'with-summary') {
-        statusClass = ' done status-with-summary';
-      } else if (task.done && task.sessionStatus === 'without-summary') {
-        statusClass = ' done status-without-summary';
-      } else if (task.done) {
-        statusClass = ' done';
+      if (t.done && t.sessionStatus === 'with-summary') {
+        className += ' done';
+        checkIcon = '\u2713';
+        dotClass = 'status-dot-green';
+      } else if (t.done && t.sessionStatus === 'without-summary') {
+        className += ' done status-without-summary';
+        checkIcon = '\u2713';
+        dotClass = 'status-dot-yellow';
       }
 
-      li.className = 'locked-item' + statusClass;
+      li.className = className;
+      li.innerHTML =
+        '<div class="locked-item-check">' + checkIcon + '</div>' +
+        '<div class="locked-item-body">' +
+        '<div class="locked-item-name"><span class="status-dot ' + dotClass + '"></span> ' + escapeHtml(t.name) + '</div>' +
+        '<div class="locked-item-meta">' + escapeHtml(t.subject || '') + ' \u2022 ' + t.duration + ' min \u2022 ' + DIFFICULTY_LABELS[t.difficulty] + '</div>' +
+        '</div>' +
+        (t.done ? '' : '<button class="btn-start-task" data-index="' + i + '" type="button">Commencer</button>');
 
-      const diffText = DIFFICULTY_LABELS[task.difficulty] || '';
-
-      // Indicateur visuel de statut
-      let statusIndicator = '';
-      if (task.done && task.sessionStatus === 'with-summary') {
-        statusIndicator = '<span class="status-dot status-dot-green" title="Termin\u00e9 avec r\u00e9sum\u00e9"></span>';
-      } else if (task.done && task.sessionStatus === 'without-summary') {
-        statusIndicator = '<span class="status-dot status-dot-yellow" title="Termin\u00e9 sans r\u00e9sum\u00e9"></span>';
-      } else if (!task.done) {
-        statusIndicator = '<span class="status-dot status-dot-grey" title="Pas encore commenc\u00e9"></span>';
-      } else {
-        statusIndicator = '<span class="status-dot status-dot-green" title="Termin\u00e9"></span>';
-      }
-
-      li.innerHTML = `
-        <span class="locked-item-check">${task.done ? '&#10003;' : ''}</span>
-        <div class="locked-item-body">
-          <div class="locked-item-name">${statusIndicator} ${escapeHtml(task.name)}</div>
-          <div class="locked-item-meta">
-            ${task.subject ? escapeHtml(task.subject) + ' \u2014 ' : ''}${task.duration} min \u2014 ${diffText}
-          </div>
-        </div>
-        ${task.done
-          ? '<span style="font-size:.82rem;color:var(--color-done);font-weight:600;">Fait</span>'
-          : '<button class="btn-start-task" data-idx="' + idx + '">Mode concentration</button>'
-        }
-      `;
-      lockedTaskList.appendChild(li);
+      list.appendChild(li);
     });
 
-    // Événements sur les boutons « Mode concentration »
-    lockedTaskList.querySelectorAll('.btn-start-task').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        lancerTimer(parseInt(btn.dataset.idx, 10));
-      });
+    // Boutons démarrer
+    list.querySelectorAll('.btn-start-task').forEach((btn) => {
+      btn.addEventListener('click', () => demarrerSession(parseInt(btn.dataset.index)));
     });
   }
 
-  // ---- Timer de session ----
+  async function resetDay() {
+    const today = new Date().toISOString().slice(0, 10);
+    await StudyDB.supprimerContratDuJour(today);
+    contratDuJour = null;
+    afficherFormulaireContrat();
+  }
 
-  function lancerTimer(taskIdx) {
+  // ==================================================================
+  // TIMER
+  // ==================================================================
+
+  function demarrerSession(taskIdx) {
     currentTaskIndex = taskIdx;
-    const task = contract.tasks[taskIdx];
+    const task = contratDuJour.tasks[taskIdx];
+    hide('viewContract'); hide('viewLocked'); show('viewTimer');
 
-    timerTaskName.textContent = task.name;
-    timerSubject.textContent = task.subject || '';
+    document.getElementById('timerTaskName').textContent = task.name;
+    document.getElementById('timerSubject').textContent = task.subject || '';
 
-    timerTotal = task.duration * 60;
-    timerRemaining = timerTotal;
+    timerTotalSeconds = task.duration * 60;
+    timerSecondsLeft = timerTotalSeconds;
     timerPaused = false;
-    timerStartTime = Date.now();
-    timerPausedTotal = 0;
-    timerPauseStart = null;
+    timerStartedAt = Date.now();
+    timerPausedElapsed = 0;
 
-    btnPause.textContent = 'Pause';
-    breakSuggestion.classList.add('hidden');
+    document.getElementById('btnPause').textContent = 'Pause';
+    document.getElementById('breakSuggestion').classList.add('hidden');
 
-    mettreAJourAffichageTimer();
-    afficherVue('viewTimer');
-    demarrerCompteARebours();
+    updateTimerDisplay();
+    timerInterval = setInterval(timerTick, 1000);
   }
 
-  function demarrerCompteARebours() {
-    clearInterval(timerInterval);
-    timerInterval = setInterval(() => {
-      if (timerPaused) return;
+  function timerTick() {
+    if (timerPaused) return;
+    timerSecondsLeft--;
+    updateTimerDisplay();
 
-      timerRemaining--;
-      mettreAJourAffichageTimer();
+    if (timerSecondsLeft <= 0) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+      jouerSonFin();
+      terminerSession(true);
+    }
+  }
 
-      // Sauvegarder l'état périodiquement (toutes les 5 secondes)
-      if (timerRemaining % 5 === 0) {
-        sauvegarderEtatTimer();
-      }
+  function updateTimerDisplay() {
+    const mins = Math.floor(Math.max(0, timerSecondsLeft) / 60);
+    const secs = Math.max(0, timerSecondsLeft) % 60;
+    document.getElementById('timerDigits').textContent =
+      String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
 
-      if (timerRemaining <= 0) {
+    const progress = timerTotalSeconds > 0 ? (timerTotalSeconds - timerSecondsLeft) / timerTotalSeconds : 0;
+    const offset = CIRCUMFERENCE * (1 - progress);
+    document.getElementById('timerRingProgress').style.strokeDashoffset = offset;
+  }
+
+  function togglePause() {
+    timerPaused = !timerPaused;
+    document.getElementById('btnPause').textContent = timerPaused ? 'Reprendre' : 'Pause';
+  }
+
+  function jouerSonFin() {
+    const chk = document.getElementById('chkSound');
+    if (!chk || !chk.checked) return;
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = 600;
+      gain.gain.value = 0.3;
+      osc.start();
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1);
+      osc.stop(ctx.currentTime + 1);
+    } catch (_) {}
+  }
+
+  async function terminerSession(completed) {
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+
+    const task = contratDuJour.tasks[currentTaskIndex];
+    const elapsed = Math.round((timerTotalSeconds - timerSecondsLeft) / 60);
+
+    sessionPending = {
+      taskName: task.name,
+      subject: task.subject,
+      date: Date.now(),
+      duration: task.duration,
+      actualDuration: elapsed,
+      difficulty: task.difficulty,
+      summary: null,
+      completed: completed,
+      qualityRating: null,
+      hourOfDay: new Date().getHours()
+    };
+
+    // Suggestion de pause
+    if (completed) {
+      const breakDur = task.duration >= 50 ? 10 : 5;
+      document.getElementById('breakDuration').textContent = breakDur;
+      document.getElementById('breakSuggestion').classList.remove('hidden');
+    }
+
+    // Ouvrir le modal de résumé
+    ouvrirRecallModal();
+  }
+
+  function abandonnerSession() {
+    confirmer('Abandonner cette session ?', () => terminerSession(false));
+  }
+
+  function retourContrat() {
+    if (timerInterval) {
+      confirmer('Quitter le timer ? Ta progression sera perdue.', () => {
         clearInterval(timerInterval);
         timerInterval = null;
-        effacerEtatTimer();
-        finDeSession();
-      }
-    }, 1000);
-  }
-
-  function mettreAJourAffichageTimer() {
-    const min = Math.floor(Math.max(0, timerRemaining) / 60);
-    const sec = Math.max(0, timerRemaining) % 60;
-    timerDigits.textContent =
-      String(min).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
-
-    const progress = timerTotal > 0 ? timerRemaining / timerTotal : 1;
-    const offset = RING_CIRCUMFERENCE * (1 - progress);
-    timerRingProgress.style.strokeDasharray = RING_CIRCUMFERENCE;
-    timerRingProgress.style.strokeDashoffset = offset;
-  }
-
-  /** Calcule la durée réelle passée en minutes (sans les pauses) */
-  function calculerDureeReelle() {
-    if (!timerStartTime) return 0;
-    let pauseMs = timerPausedTotal;
-    if (timerPaused && timerPauseStart) {
-      pauseMs += Date.now() - timerPauseStart;
-    }
-    const totalMs = Date.now() - timerStartTime - pauseMs;
-    return Math.max(0, Math.round(totalMs / 60000));
-  }
-
-  function finDeSession() {
-    if (chkSound.checked) {
-      jouerSonFin();
-    }
-    // Marquer la tâche et déclencher le flux recall → qualité → sauvegarde
-    marquerTacheAccomplieEtRecall();
-  }
-
-  /**
-   * Flux complet après fin de session :
-   * 1. Modal récupération active (résumé)
-   * 2. Modal évaluation qualité (étoiles)
-   * 3. Sauvegarde de la session avec toutes les données
-   * 4. Suggestion de flashcards si résumé fourni (étape 4)
-   */
-  function marquerTacheAccomplieEtRecall() {
-    if (currentTaskIndex < 0 || !contract.tasks[currentTaskIndex]) return;
-
-    const task = contract.tasks[currentTaskIndex];
-    const dureeReelle = calculerDureeReelle();
-
-    // Étape 1 : Modal de récupération active
-    ouvrirRecallModal((summary, skipped) => {
-
-      // Étape 2 : Modal d'évaluation qualité
-      ouvrirQualityModal((rating) => {
-
-        // Étape 3 : Sauvegarder la session
-        task.done = true;
-        task.sessionStatus = skipped ? 'without-summary' : 'with-summary';
-        sauvegarderContrat();
-
-        // Extraire l'heure de la session pour le champ hourOfDay
-        const heureSession = new Date().getHours();
-
-        const sessionData = {
-          taskName: task.name,
-          subject: task.subject || '',
-          date: Date.now(),
-          duration: task.duration,
-          actualDuration: dureeReelle,
-          difficulty: task.difficulty,
-          summary: skipped ? null : summary,
-          completed: true,
-          qualityRating: rating,     // 1-5 ou null si passé
-          hourOfDay: heureSession    // 0-23
-        };
-        StudyDB.enregistrerSession(sessionData);
-
-        // Invalider le cache du dashboard pour inclure la nouvelle session
-        StudyDashboard.invaliderCache();
-
-        // Suggestion de pause
-        breakDuration.textContent = task.duration === 50 ? '10' : '5';
-        breakSuggestion.classList.remove('hidden');
-
-        afficherToast('Session enregistr\u00e9e');
-
-        // Étape 4 : Suggestion de flashcards si résumé fourni
-        if (!skipped && summary && summary.length >= MIN_RECALL_CHARS) {
-          const suggestions = extraireConceptsCles(summary);
-          if (suggestions.length > 0) {
-            pendingSuggestions = suggestions;
-            pendingSuggestionSubject = task.subject || '';
-            pendingSuggestionTaskName = task.name;
-            // Afficher le modal de suggestions avec un léger délai
-            setTimeout(() => {
-              ouvrirFlashcardSuggestionModal();
-            }, 800);
-          }
-        }
+        afficherContratVerrouille();
       });
-    });
+    } else {
+      afficherContratVerrouille();
+    }
   }
 
-  // ---- Modal de récupération active ----
+  // ==================================================================
+  // MODALS : RÉSUMÉ + QUALITÉ
+  // ==================================================================
 
-  /** Ouvre le modal de récupération active. Le callback reçoit (summary, skipped). */
-  function ouvrirRecallModal(callback) {
-    recallCallback = callback;
-    recallTextarea.value = '';
-    recallCharCount.textContent = '0';
-    btnRecallSave.disabled = true;
-    recallModal.classList.remove('hidden');
-    recallTextarea.focus();
+  function ouvrirRecallModal() {
+    document.getElementById('recallTextarea').value = '';
+    document.getElementById('recallCharCount').textContent = '0';
+    document.getElementById('recallCharCount').parentElement.classList.remove('recall-counter-ok');
+    document.getElementById('btnRecallSave').disabled = true;
+    document.getElementById('recallModal').classList.remove('hidden');
   }
 
-  function fermerRecallModal() {
-    recallModal.classList.add('hidden');
-    recallCallback = null;
+  function updateRecallCounter() {
+    const textarea = document.getElementById('recallTextarea');
+    const count = textarea.value.length;
+    const countEl = document.getElementById('recallCharCount');
+    countEl.textContent = count;
+    const ok = count >= 50;
+    countEl.parentElement.classList.toggle('recall-counter-ok', ok);
+    document.getElementById('btnRecallSave').disabled = !ok;
   }
 
-  // ---- Modal d'évaluation qualité ----
+  async function sauvegarderResume() {
+    const summary = document.getElementById('recallTextarea').value.trim();
+    sessionPending.summary = summary;
+    document.getElementById('recallModal').classList.add('hidden');
 
-  /** Ouvre le modal d'évaluation qualité. Le callback reçoit le rating (1-5 ou null). */
-  function ouvrirQualityModal(callback) {
-    qualityCallback = callback;
-    selectedQuality = 0;
-    mettreAJourEtoiles();
-    qualitySelectedLabel.innerHTML = '&nbsp;';
-    btnQualitySave.disabled = true;
-    qualityModal.classList.remove('hidden');
-  }
+    // Tooltip après premier résumé
+    showTooltip('summary', 'Résumer ce que tu retiens renforce ta mémoire. Continue comme ça !');
 
-  function fermerQualityModal() {
-    qualityModal.classList.add('hidden');
-    qualityCallback = null;
-  }
+    // Ouvrir qualité
+    ouvrirQualityModal();
 
-  /** Met à jour l'affichage des étoiles selon la sélection */
-  function mettreAJourEtoiles() {
-    qualityStarsEl.querySelectorAll('.quality-star').forEach((btn) => {
-      const rating = parseInt(btn.dataset.rating, 10);
-      if (rating <= selectedQuality) {
-        btn.classList.add('active');
-      } else {
-        btn.classList.remove('active');
+    // Suggestions flashcards
+    if (summary.length >= 50) {
+      const suggestions = extraireConceptsCles(summary);
+      if (suggestions.length > 0) {
+        setTimeout(() => proposerFlashcards(suggestions, sessionPending.subject, sessionPending.taskName), 600);
       }
-    });
+    }
   }
 
-  // ============================================================
-  // EXTRACTION DE CONCEPTS CLÉS (FLASHCARDS AUTOMATIQUES)
-  // ============================================================
+  function skipResume() {
+    sessionPending.summary = null;
+    document.getElementById('recallModal').classList.add('hidden');
+    ouvrirQualityModal();
+  }
 
-  /**
-   * Extrait des concepts clés d'un texte (résumé de session) pour
-   * proposer des cartes de révision.
-   *
-   * Algorithme :
-   * 1. Découper en phrases (délimiteurs . ! ?)
-   * 2. Chercher des patterns de définition : "X est Y", "X signifie Y"
-   * 3. Chercher des patterns d'énumération : "il y a N types"
-   * 4. Pour les phrases restantes : question de rappel générique
-   * 5. Limiter à 5 suggestions maximum
-   *
-   * Retourne un tableau de { question, answer, selected: true }
-   */
+  function ouvrirQualityModal() {
+    selectedQuality = 0;
+    document.querySelectorAll('.quality-star').forEach((s) => s.classList.remove('active'));
+    document.getElementById('qualitySelectedLabel').innerHTML = '&nbsp;';
+    document.getElementById('btnQualitySave').disabled = true;
+    document.getElementById('qualityModal').classList.remove('hidden');
+  }
+
+  function selectQuality(rating) {
+    selectedQuality = rating;
+    document.querySelectorAll('.quality-star').forEach((s) => {
+      s.classList.toggle('active', parseInt(s.dataset.rating) <= rating);
+    });
+    document.getElementById('qualitySelectedLabel').textContent = QUALITY_LABELS[rating];
+    document.getElementById('btnQualitySave').disabled = false;
+  }
+
+  async function sauvegarderQualite() {
+    sessionPending.qualityRating = selectedQuality;
+    document.getElementById('qualityModal').classList.add('hidden');
+    await finaliserSession();
+  }
+
+  function skipQuality() {
+    document.getElementById('qualityModal').classList.add('hidden');
+    finaliserSession();
+  }
+
+  async function finaliserSession() {
+    await StudyDB.enregistrerSession(sessionPending);
+
+    // Marquer la tâche comme terminée
+    const task = contratDuJour.tasks[currentTaskIndex];
+    task.done = true;
+    task.sessionStatus = sessionPending.summary ? 'with-summary' : 'without-summary';
+    await StudyDB.sauvegarderContrat(contratDuJour);
+
+    StudyDashboard.invaliderCache();
+    afficherToast('Session enregistr\u00e9e !');
+    sessionPending = null;
+
+    afficherContratVerrouille();
+  }
+
+  // ==================================================================
+  // FLASHCARDS : EXTRACTION CONCEPTS + SUGGESTION
+  // ==================================================================
+
   function extraireConceptsCles(texte) {
     const suggestions = [];
+    const phrases = texte.split(/[.!?\n]+/).map((s) => s.trim()).filter((s) => s.length > 15);
 
-    // Nettoyage et découpage en phrases
-    const phrases = texte
-      .replace(/\n+/g, '. ')
-      .split(/(?<=[.!?])\s+/)
-      .map((p) => p.trim())
-      .filter((p) => p.length > 15);
-
-    for (const phrase of phrases) {
-      if (suggestions.length >= 5) break;
-
-      // Pattern 1 : Définition — "X est/sont/signifie/correspond à Y"
-      const defMatch = phrase.match(
-        /^(.{3,60}?)\s+(?:est|sont|c'est|signifie|d\u00e9signe|correspond\s+\u00e0|se\s+d\u00e9finit\s+comme)\s+(.{8,})/i
-      );
-      if (defMatch) {
-        const sujet = defMatch[1]
-          .replace(/^(le|la|les|l'|un|une|des|du|de la)\s+/i, '')
-          .trim();
+    phrases.forEach((phrase) => {
+      // Définitions
+      const defMatch = phrase.match(/^(.+?)\s+(?:est|sont|signifie|d\u00e9signe|repr\u00e9sente)\s+(.+)/i);
+      if (defMatch && suggestions.length < 5) {
         suggestions.push({
-          question: 'D\u00e9finis : ' + sujet.charAt(0).toUpperCase() + sujet.slice(1),
-          answer: phrase.replace(/[.!?]$/, ''),
+          question: 'D\u00e9finis : ' + defMatch[1].trim(),
+          answer: defMatch[2].trim(),
           selected: true
         });
-        continue;
+        return;
       }
 
-      // Pattern 2 : Énumération — "il y a N types/catégories"
-      const enumMatch = phrase.match(
-        /(?:il\s+(?:y\s+a|existe))\s+(\d+)\s+(\w+)/i
-      );
-      if (enumMatch) {
+      // Énumérations
+      const enumMatch = phrase.match(/il\s+(?:y\s+a|existe)\s+(\d+)\s+(?:types?\s+de|formes?\s+de|cat\u00e9gories?\s+de|sortes?\s+de)?\s*(.+)/i);
+      if (enumMatch && suggestions.length < 5) {
         suggestions.push({
-          question: 'Combien de ' + enumMatch[2] + ' y a-t-il ?',
-          answer: phrase.replace(/[.!?]$/, ''),
+          question: 'Combien de ' + enumMatch[2].trim() + ' y a-t-il ?',
+          answer: enumMatch[1] + ' : ' + phrase,
           selected: true
         });
-        continue;
+        return;
       }
 
-      // Pattern 3 : Phrase longue sans pattern spécifique → question de rappel
-      if (phrase.length > 30) {
-        const words = phrase.split(/\s+/);
-        const topicWords = [];
-        let len = 0;
-        for (const w of words) {
-          if (len + w.length > 40) break;
-          topicWords.push(w);
-          len += w.length + 1;
-        }
-        const topic = topicWords.join(' ');
+      // Générique (phrases longues)
+      if (phrase.length > 40 && suggestions.length < 5) {
+        const preview = phrase.length > 80 ? phrase.substring(0, 77) + '...' : phrase;
         suggestions.push({
-          question: 'Que retiens-tu sur : \u00ab ' + topic + '\u2026 \u00bb ?',
-          answer: phrase.replace(/[.!?]$/, ''),
+          question: 'Que retiens-tu sur : \u00ab ' + preview + ' \u00bb ?',
+          answer: phrase,
           selected: true
         });
       }
-    }
-
-    return suggestions;
-  }
-
-  // ============================================================
-  // MODAL SUGGESTION DE FLASHCARDS
-  // ============================================================
-
-  /** Ouvre le modal de suggestion de flashcards après un résumé */
-  function ouvrirFlashcardSuggestionModal() {
-    if (!flashcardSuggestionModal || pendingSuggestions.length === 0) return;
-
-    flashcardSuggestionHint.textContent =
-      'J\'ai d\u00e9tect\u00e9 ' + pendingSuggestions.length +
-      ' concept' + (pendingSuggestions.length > 1 ? 's' : '') +
-      ' cl\u00e9' + (pendingSuggestions.length > 1 ? 's' : '') +
-      ' dans ton r\u00e9sum\u00e9. Veux-tu cr\u00e9er des cartes de r\u00e9vision ?';
-
-    // Générer la liste de suggestions avec checkboxes
-    flashcardSuggestionList.innerHTML = '';
-    pendingSuggestions.forEach((s, idx) => {
-      const item = document.createElement('div');
-      item.className = 'flashcard-suggestion-item';
-      item.innerHTML = `
-        <label class="flashcard-suggestion-check">
-          <input type="checkbox" data-idx="${idx}" ${s.selected ? 'checked' : ''}>
-        </label>
-        <div class="flashcard-suggestion-content">
-          <div class="flashcard-suggestion-q">${escapeHtml(s.question)}</div>
-          <div class="flashcard-suggestion-a">${escapeHtml(s.answer)}</div>
-        </div>
-      `;
-
-      item.querySelector('input').addEventListener('change', (e) => {
-        pendingSuggestions[idx].selected = e.target.checked;
-      });
-
-      flashcardSuggestionList.appendChild(item);
     });
 
-    flashcardSuggestionModal.classList.remove('hidden');
+    return suggestions.slice(0, 5);
   }
 
-  /** Sauvegarde les flashcards sélectionnées */
-  async function sauvegarderFlashcardsSuggestions() {
-    const selection = pendingSuggestions.filter((s) => s.selected);
+  function proposerFlashcards(suggestions, subject, taskName) {
+    const list = document.getElementById('flashcardSuggestionList');
+    list.innerHTML = '';
+    suggestions.forEach((s, i) => {
+      const item = document.createElement('div');
+      item.className = 'flashcard-suggestion-item';
+      item.innerHTML =
+        '<div class="flashcard-suggestion-check">' +
+        '<input type="checkbox" id="sugg' + i + '" ' + (s.selected ? 'checked' : '') + '>' +
+        '</div>' +
+        '<div class="flashcard-suggestion-content">' +
+        '<p class="flashcard-suggestion-q">' + escapeHtml(s.question) + '</p>' +
+        '<p class="flashcard-suggestion-a">' + escapeHtml(s.answer) + '</p>' +
+        '</div>';
+      list.appendChild(item);
+    });
+
+    // Sauvegarder les suggestions pour la création
+    window._pendingSuggestions = suggestions;
+    window._pendingSuggestionSubject = subject;
+    window._pendingSuggestionTask = taskName;
+
+    document.getElementById('flashcardSuggestionModal').classList.remove('hidden');
+  }
+
+  async function sauvegarderSuggestionsFlashcards() {
+    const suggestions = window._pendingSuggestions || [];
+    const subject = window._pendingSuggestionSubject || '';
+    const taskName = window._pendingSuggestionTask || '';
     let count = 0;
 
-    for (const s of selection) {
-      await StudyDB.ajouterFlashcard({
-        question: s.question,
-        answer: s.answer,
-        subject: pendingSuggestionSubject,
-        taskName: pendingSuggestionTaskName,
-        createdDate: Date.now(),
-        reviewCount: 0,
-        lastReviewed: null,
-        difficulty: 2
-      });
-      count++;
+    for (let i = 0; i < suggestions.length; i++) {
+      const chk = document.getElementById('sugg' + i);
+      if (chk && chk.checked) {
+        await StudyDB.ajouterFlashcard({
+          question: suggestions[i].question,
+          answer: suggestions[i].answer,
+          subject: subject,
+          taskName: taskName,
+          createdDate: Date.now(),
+          reviewCount: 0,
+          lastReviewed: null,
+          difficulty: 2,
+          easinessFactor: 2.5,
+          interval: 1,
+          nextReviewDate: Date.now()
+        });
+        count++;
+      }
     }
 
-    flashcardSuggestionModal.classList.add('hidden');
-    pendingSuggestions = [];
+    document.getElementById('flashcardSuggestionModal').classList.add('hidden');
+    if (count > 0) afficherToast(count + ' carte' + (count > 1 ? 's' : '') + ' cr\u00e9\u00e9e' + (count > 1 ? 's' : ''));
+    delete window._pendingSuggestions;
+    delete window._pendingSuggestionSubject;
+    delete window._pendingSuggestionTask;
+  }
 
-    if (count > 0) {
-      afficherToast(count + ' carte' + (count > 1 ? 's' : '') + ' cr\u00e9\u00e9e' + (count > 1 ? 's' : ''));
+  // ==================================================================
+  // FLASHCARDS : LISTE + CRÉATION MANUELLE
+  // ==================================================================
+
+  async function afficherFlashcards() {
+    const filter = document.getElementById('flashcardFilterSubject').value;
+    const cards = filter ? await StudyDB.getFlashcardsParMatiere(filter) : await StudyDB.getToutesFlashcards();
+    const stats = await StudyDB.getStatsFlashcards();
+
+    // Stats
+    document.getElementById('flashcardStats').innerHTML =
+      '<div class="flashcard-stat-item"><span class="flashcard-stat-value">' + stats.total + '</span><span class="flashcard-stat-label">Total</span></div>' +
+      '<div class="flashcard-stat-item"><span class="flashcard-stat-value">' + stats.maitrisees + '</span><span class="flashcard-stat-label">Ma\u00eetris\u00e9es</span></div>' +
+      '<div class="flashcard-stat-item"><span class="flashcard-stat-value">' + stats.dues + '</span><span class="flashcard-stat-label">\u00c0 r\u00e9viser</span></div>';
+
+    // Bannière cartes dues
+    const banner = document.getElementById('flashcardDueBanner');
+    const dueCount = document.getElementById('flashcardDueCount');
+    if (stats.dues > 0) {
+      banner.style.display = 'block';
+      dueCount.textContent = stats.dues + ' carte' + (stats.dues > 1 ? 's' : '') + ' \u00e0 r\u00e9viser aujourd\'hui';
+    } else {
+      const next = await StudyDB.getProchaineRevision();
+      if (next && stats.total > 0) {
+        banner.style.display = 'block';
+        const nextDate = new Date(next);
+        const demain = new Date(); demain.setDate(demain.getDate() + 1);
+        if (nextDate.toDateString() === demain.toDateString()) {
+          dueCount.textContent = 'Prochaine r\u00e9vision demain';
+        } else {
+          dueCount.textContent = 'Prochaine r\u00e9vision le ' + nextDate.toLocaleDateString('fr-BE', { day: 'numeric', month: 'short' });
+        }
+      } else {
+        banner.style.display = 'none';
+      }
+    }
+
+    // Boutons révision
+    document.getElementById('btnStartReview').disabled = stats.dues === 0;
+    document.getElementById('btnReviewAll').disabled = stats.total === 0;
+
+    // Filtre matières
+    const allCards = await StudyDB.getToutesFlashcards();
+    const subjects = [...new Set(allCards.map((c) => c.subject).filter(Boolean))];
+    const select = document.getElementById('flashcardFilterSubject');
+    const currentVal = select.value;
+    select.innerHTML = '<option value="">Toutes les mati\u00e8res</option>';
+    subjects.forEach((s) => {
+      const opt = document.createElement('option');
+      opt.value = s;
+      opt.textContent = s;
+      if (s === currentVal) opt.selected = true;
+      select.appendChild(opt);
+    });
+
+    // Liste
+    const list = document.getElementById('flashcardList');
+    const empty = document.getElementById('flashcardEmpty');
+    list.innerHTML = '';
+
+    if (cards.length === 0) {
+      empty.classList.remove('hidden');
+    } else {
+      empty.classList.add('hidden');
+      cards.forEach((card) => {
+        const el = document.createElement('div');
+        el.className = 'flashcard-item';
+        const diffClass = 'flashcard-diff-' + card.difficulty;
+        const diffLabel = DIFFICULTY_LABELS[card.difficulty] || 'Moyen';
+        const mastered = card.reviewCount >= 3 && card.difficulty <= 1;
+        const nextReview = card.nextReviewDate ? new Date(card.nextReviewDate).toLocaleDateString('fr-BE', { day: 'numeric', month: 'short' }) : '';
+
+        el.innerHTML =
+          '<div class="flashcard-item-header">' +
+          '<span class="flashcard-item-subject">' + escapeHtml(card.subject || 'Sans mati\u00e8re') + '</span>' +
+          '<span class="flashcard-item-diff ' + diffClass + '">' + diffLabel + '</span>' +
+          '</div>' +
+          '<p class="flashcard-item-question">' + escapeHtml(card.question) + '</p>' +
+          '<p class="flashcard-item-answer">' + escapeHtml(card.answer) + '</p>' +
+          '<div class="flashcard-item-footer">' +
+          '<span class="flashcard-item-reviews">' +
+          (mastered ? '\u2705 Ma\u00eetris\u00e9e' : '\uD83D\uDD04 ' + card.reviewCount + 'x') +
+          (nextReview ? ' \u2022 Prochaine : ' + nextReview : '') +
+          '</span>' +
+          '<button class="btn-delete-flashcard" data-id="' + card.id + '" type="button" title="Supprimer">\u00D7</button>' +
+          '</div>';
+        list.appendChild(el);
+      });
+
+      // Événements suppression
+      list.querySelectorAll('.btn-delete-flashcard').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          await StudyDB.supprimerFlashcard(parseInt(btn.dataset.id));
+          afficherFlashcards();
+        });
+      });
     }
   }
 
-  // ============================================================
-  // MODAL CRÉATION MANUELLE DE FLASHCARD
-  // ============================================================
-
-  function ouvrirFlashcardManualModal() {
-    if (!flashcardManualModal) return;
-    manualFlashcardQuestion.value = '';
-    manualFlashcardAnswer.value = '';
-    manualFlashcardSubject.value = '';
-    flashcardManualModal.classList.remove('hidden');
-    manualFlashcardQuestion.focus();
+  function ouvrirCreationManuelle() {
+    document.getElementById('manualFlashcardQuestion').value = '';
+    document.getElementById('manualFlashcardAnswer').value = '';
+    document.getElementById('manualFlashcardSubject').value = '';
+    document.getElementById('flashcardManualModal').classList.remove('hidden');
   }
 
   async function sauvegarderFlashcardManuelle() {
-    const question = manualFlashcardQuestion.value.trim();
-    const answer = manualFlashcardAnswer.value.trim();
-    const subject = manualFlashcardSubject.value.trim();
+    const q = document.getElementById('manualFlashcardQuestion').value.trim();
+    const a = document.getElementById('manualFlashcardAnswer').value.trim();
+    const s = document.getElementById('manualFlashcardSubject').value.trim();
 
-    if (!question || !answer) {
-      afficherToast('Remplis la question et la r\u00e9ponse');
-      return;
-    }
+    if (!q || !a) { afficherToast('Question et r\u00e9ponse requises'); return; }
 
     await StudyDB.ajouterFlashcard({
-      question: question,
-      answer: answer,
-      subject: subject,
+      question: q,
+      answer: a,
+      subject: s,
       taskName: '',
       createdDate: Date.now(),
       reviewCount: 0,
       lastReviewed: null,
-      difficulty: 2
+      difficulty: 2,
+      easinessFactor: 2.5,
+      interval: 1,
+      nextReviewDate: Date.now()
     });
 
-    flashcardManualModal.classList.add('hidden');
+    document.getElementById('flashcardManualModal').classList.add('hidden');
     afficherToast('Carte cr\u00e9\u00e9e');
+    afficherFlashcards();
+  }
 
-    // Rafraîchir la liste si on est sur l'onglet flashcards
-    if (activeTab === 'flashcards') {
-      afficherFlashcards();
+  // ==================================================================
+  // FLASHCARDS : MODE RÉVISION SM-2
+  // ==================================================================
+
+  async function demarrerRevision(mode) {
+    reviewMode = mode || 'due';
+    let cards;
+
+    if (reviewMode === 'due') {
+      cards = await StudyDB.getFlashcardsDues();
+    } else {
+      cards = await StudyDB.getToutesFlashcards();
     }
-  }
-
-  // ============================================================
-  // ONGLET FLASHCARDS (LISTE, STATS, FILTRE)
-  // ============================================================
-
-  /** Affiche l'onglet flashcards complet */
-  async function afficherFlashcards() {
-    await afficherStatsFlashcards();
-    await remplirFiltreMatieresFlashcards();
-    await afficherListeFlashcards();
-  }
-
-  /** Affiche les statistiques en haut de l'onglet */
-  async function afficherStatsFlashcards() {
-    if (!flashcardStats) return;
-    const stats = await StudyDB.getStatsFlashcards();
-
-    flashcardStats.innerHTML = `
-      <div class="flashcard-stat-item">
-        <span class="flashcard-stat-value">${stats.total}</span>
-        <span class="flashcard-stat-label">Cartes</span>
-      </div>
-      <div class="flashcard-stat-item">
-        <span class="flashcard-stat-value">${stats.maitrisees}</span>
-        <span class="flashcard-stat-label">Ma\u00eetris\u00e9es</span>
-      </div>
-      <div class="flashcard-stat-item">
-        <span class="flashcard-stat-value">${stats.total - stats.maitrisees}</span>
-        <span class="flashcard-stat-label">\u00c0 r\u00e9viser</span>
-      </div>
-    `;
-
-    // Activer/désactiver le bouton de révision
-    if (btnStartReview) {
-      btnStartReview.disabled = stats.total === 0;
-    }
-  }
-
-  /** Remplit le filtre par matière avec les matières existantes */
-  async function remplirFiltreMatieresFlashcards() {
-    if (!flashcardFilterSubject) return;
-    const cards = await StudyDB.getToutesFlashcards();
-
-    const matieres = new Set();
-    cards.forEach((c) => {
-      if (c.subject) matieres.add(c.subject);
-    });
-
-    // Garder la sélection actuelle
-    const currentValue = flashcardFilterSubject.value;
-
-    flashcardFilterSubject.innerHTML = '<option value="">Toutes les mati\u00e8res</option>';
-    Array.from(matieres).sort().forEach((m) => {
-      const opt = document.createElement('option');
-      opt.value = m;
-      opt.textContent = m;
-      flashcardFilterSubject.appendChild(opt);
-    });
-
-    flashcardFilterSubject.value = currentValue;
-  }
-
-  /** Affiche la liste des flashcards avec le filtre actif */
-  async function afficherListeFlashcards() {
-    if (!flashcardList) return;
-    const matiere = flashcardFilterSubject ? flashcardFilterSubject.value : '';
-    const cards = await StudyDB.getFlashcardsParMatiere(matiere);
-
-    flashcardList.innerHTML = '';
-
-    if (cards.length === 0) {
-      flashcardEmpty.classList.remove('hidden');
-      flashcardList.classList.add('hidden');
-      return;
-    }
-
-    flashcardEmpty.classList.add('hidden');
-    flashcardList.classList.remove('hidden');
-
-    cards.forEach((card) => {
-      const div = document.createElement('div');
-      div.className = 'flashcard-item';
-
-      // Indicateur de maîtrise
-      const maitrisee = card.reviewCount >= 3 && card.difficulty <= 1;
-      const diffLabel = card.difficulty <= 1 ? 'Facile' : card.difficulty === 2 ? 'Moyen' : 'Difficile';
-
-      div.innerHTML = `
-        <div class="flashcard-item-header">
-          <span class="flashcard-item-subject">${escapeHtml(card.subject || 'Sans mati\u00e8re')}</span>
-          <span class="flashcard-item-diff flashcard-diff-${card.difficulty}">${diffLabel}</span>
-        </div>
-        <div class="flashcard-item-question">${escapeHtml(card.question)}</div>
-        <div class="flashcard-item-answer">${escapeHtml(card.answer)}</div>
-        <div class="flashcard-item-footer">
-          <span class="flashcard-item-reviews">${card.reviewCount} r\u00e9vision${card.reviewCount !== 1 ? 's' : ''}${maitrisee ? ' \u2014 Ma\u00eetris\u00e9e' : ''}</span>
-          <button class="btn-delete-flashcard" data-id="${card.id}" title="Supprimer">&times;</button>
-        </div>
-      `;
-
-      // Événement suppression
-      div.querySelector('.btn-delete-flashcard').addEventListener('click', async () => {
-        await StudyDB.supprimerFlashcard(card.id);
-        afficherToast('Carte supprim\u00e9e');
-        afficherFlashcards();
-      });
-
-      flashcardList.appendChild(div);
-    });
-  }
-
-  // ============================================================
-  // MODE RÉVISION DE FLASHCARDS
-  // ============================================================
-
-  /** Démarre une session de révision */
-  async function demarrerRevision() {
-    const matiere = flashcardFilterSubject ? flashcardFilterSubject.value : '';
-    const cards = await StudyDB.getFlashcardsParMatiere(matiere);
 
     if (cards.length === 0) {
       afficherToast('Aucune carte \u00e0 r\u00e9viser');
       return;
     }
 
-    // Trier : cartes non maîtrisées en premier, puis par ancienneté de révision
-    reviewCards = cards.sort((a, b) => {
-      const aMaitrisee = a.reviewCount >= 3 && a.difficulty <= 1;
-      const bMaitrisee = b.reviewCount >= 3 && b.difficulty <= 1;
-      if (aMaitrisee !== bMaitrisee) return aMaitrisee ? 1 : -1;
-      return (a.lastReviewed || 0) - (b.lastReviewed || 0);
-    }).slice(0, 20); // Maximum 20 cartes par session
+    // Trier : non maîtrisées d'abord, puis par nextReviewDate
+    cards.sort((a, b) => {
+      const aMastered = a.reviewCount >= 3 && a.difficulty <= 1;
+      const bMastered = b.reviewCount >= 3 && b.difficulty <= 1;
+      if (aMastered !== bMastered) return aMastered ? 1 : -1;
+      return (a.nextReviewDate || 0) - (b.nextReviewDate || 0);
+    });
 
+    // Max 20 cartes par session
+    reviewCards = cards.slice(0, 20);
     reviewIndex = 0;
     reviewFlipped = false;
 
+    document.getElementById('flashcardReviewModal').classList.remove('hidden');
     afficherCarteRevision();
-    flashcardReviewModal.classList.remove('hidden');
   }
 
-  /** Affiche la carte courante dans le mode révision */
   function afficherCarteRevision() {
     if (reviewIndex >= reviewCards.length) {
-      finDeRevision();
+      finRevision();
       return;
     }
 
     const card = reviewCards[reviewIndex];
-    reviewProgress.textContent = (reviewIndex + 1) + ' / ' + reviewCards.length;
-    reviewQuestionText.textContent = card.question;
-    reviewAnswerText.textContent = card.answer;
-    reviewSubject.textContent = card.subject || '';
+    document.getElementById('reviewProgress').textContent = (reviewIndex + 1) + ' / ' + reviewCards.length;
+    document.getElementById('reviewQuestionText').textContent = card.question;
+    document.getElementById('reviewAnswerText').textContent = card.answer;
+    document.getElementById('reviewSubject').textContent = card.subject || '';
 
-    // Remettre la carte face question
+    // Reset flip
     reviewFlipped = false;
-    flashcardFlipInner.classList.remove('flipped');
-    btnRevealAnswer.classList.remove('hidden');
-    reviewButtons.classList.add('hidden');
+    document.getElementById('flashcardFlipInner').classList.remove('flipped');
+    document.getElementById('btnRevealAnswer').classList.remove('hidden');
+    document.getElementById('reviewButtons').classList.add('hidden');
   }
 
-  /** Retourne la carte pour révéler la réponse */
   function revelerReponse() {
     reviewFlipped = true;
-    flashcardFlipInner.classList.add('flipped');
-    btnRevealAnswer.classList.add('hidden');
-    reviewButtons.classList.remove('hidden');
+    document.getElementById('flashcardFlipInner').classList.add('flipped');
+    document.getElementById('btnRevealAnswer').classList.add('hidden');
+    document.getElementById('reviewButtons').classList.remove('hidden');
   }
 
-  /** L'utilisateur savait la réponse */
-  async function revisionJeSavais() {
+  function flipCard() {
+    if (!reviewFlipped) {
+      revelerReponse();
+    }
+  }
+
+  /**
+   * Algorithme SM-2 simplifié :
+   * - Difficile (1) : interval = 1 jour, easiness -= 0.2
+   * - Moyen (3) : interval = interval * easiness
+   * - Facile (5) : interval = interval * easiness * 1.3, easiness += 0.1
+   */
+  async function repondreRevision(qualite) {
     const card = reviewCards[reviewIndex];
+
+    // Assurer les valeurs par défaut SM-2
+    if (!card.easinessFactor) card.easinessFactor = 2.5;
+    if (!card.interval) card.interval = 1;
+
     card.reviewCount = (card.reviewCount || 0) + 1;
     card.lastReviewed = Date.now();
-    card.difficulty = Math.max(1, (card.difficulty || 2) - 1);
+
+    if (qualite === 1) {
+      // Difficile
+      card.interval = 1;
+      card.easinessFactor = Math.max(1.3, card.easinessFactor - 0.2);
+      card.difficulty = Math.min(3, (card.difficulty || 2) + 1);
+    } else if (qualite === 3) {
+      // Moyen
+      card.interval = Math.max(1, Math.round(card.interval * card.easinessFactor));
+    } else if (qualite === 5) {
+      // Facile
+      card.interval = Math.max(1, Math.round(card.interval * card.easinessFactor * 1.3));
+      card.easinessFactor = Math.min(2.5, card.easinessFactor + 0.1);
+      card.difficulty = Math.max(1, (card.difficulty || 2) - 1);
+    }
+
+    // Calculer nextReviewDate
+    card.nextReviewDate = Date.now() + card.interval * 86400000;
+
     await StudyDB.mettreAJourFlashcard(card);
 
+    // Carte suivante
     reviewIndex++;
     afficherCarteRevision();
   }
 
-  /** L'utilisateur ne savait pas → à revoir */
-  async function revisionARevoir() {
-    const card = reviewCards[reviewIndex];
-    card.reviewCount = (card.reviewCount || 0) + 1;
-    card.lastReviewed = Date.now();
-    card.difficulty = Math.min(3, (card.difficulty || 2) + 1);
-    await StudyDB.mettreAJourFlashcard(card);
-
-    reviewIndex++;
-    afficherCarteRevision();
-  }
-
-  /** Fin de la session de révision */
-  function finDeRevision() {
-    flashcardReviewModal.classList.add('hidden');
+  function finRevision() {
+    document.getElementById('flashcardReviewModal').classList.add('hidden');
     afficherToast('R\u00e9vision termin\u00e9e !');
-
-    // Rafraîchir la liste si sur l'onglet flashcards
-    if (activeTab === 'flashcards') {
-      afficherFlashcards();
-    }
+    afficherFlashcards();
   }
 
-  // ---- Timer : pause / terminer / abandonner ----
-
-  function togglePause() {
-    timerPaused = !timerPaused;
-    if (timerPaused) {
-      timerPauseStart = Date.now();
-      btnPause.textContent = 'Reprendre';
-    } else {
-      if (timerPauseStart) {
-        timerPausedTotal += Date.now() - timerPauseStart;
-        timerPauseStart = null;
-      }
-      btnPause.textContent = 'Pause';
-    }
-    sauvegarderEtatTimer();
+  function fermerRevision() {
+    document.getElementById('flashcardReviewModal').classList.add('hidden');
+    afficherFlashcards();
   }
 
-  function terminerSession() {
-    clearInterval(timerInterval);
-    timerInterval = null;
-    effacerEtatTimer();
+  // ==================================================================
+  // HISTORIQUE PAGINÉ
+  // ==================================================================
 
-    if (currentTaskIndex >= 0 && contract.tasks[currentTaskIndex]) {
-      marquerTacheAccomplieEtRecall();
-    }
-  }
+  async function chargerHistorique() {
+    const sessions = await StudyDB.getSessionsPaginees(historyOffset, HISTORY_PAGE_SIZE);
+    const total = await StudyDB.getNombreTotalSessions();
+    const list = document.getElementById('historyList');
+    const empty = document.getElementById('historyEmpty');
+    const btnLoad = document.getElementById('btnLoadMore');
 
-  function abandonnerSession() {
-    afficherConfirmation(
-      'Es-tu s\u00fbr\u00b7e de vouloir abandonner cette session\u00a0?',
-      'Oui, abandonner',
-      () => {
-        clearInterval(timerInterval);
-        timerInterval = null;
-        effacerEtatTimer();
-        retourContrat();
-      }
-    );
-  }
+    if (historyOffset === 0) list.innerHTML = '';
 
-  function retourContrat() {
-    currentTaskIndex = -1;
-    timerStartTime = null;
-    timerPausedTotal = 0;
-    timerPauseStart = null;
-    breakSuggestion.classList.add('hidden');
-    afficherVueVerrouillee();
-  }
-
-  // ---- Son de fin de session ----
-
-  function jouerSonFin() {
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      [440, 523.25].forEach((freq, i) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.value = freq;
-        gain.gain.setValueAtTime(0.15, ctx.currentTime + i * 0.3);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.3 + 0.6);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(ctx.currentTime + i * 0.3);
-        osc.stop(ctx.currentTime + i * 0.3 + 0.7);
-      });
-    } catch (_) {
-      // Navigateur ne supporte pas AudioContext, on ignore
-    }
-  }
-
-  // ---- Toast / notification discrète ----
-
-  let toastTimeout = null;
-
-  function afficherToast(message) {
-    clearTimeout(toastTimeout);
-    toastEl.textContent = message;
-    toastEl.classList.remove('hidden');
-    toastEl.classList.add('toast-visible');
-
-    toastTimeout = setTimeout(() => {
-      toastEl.classList.remove('toast-visible');
-      toastEl.classList.add('toast-hiding');
-      setTimeout(() => {
-        toastEl.classList.add('hidden');
-        toastEl.classList.remove('toast-hiding');
-      }, 400);
-    }, 2500);
-  }
-
-  // ---- Historique des sessions ----
-
-  async function afficherHistorique() {
-    const sessions = await StudyDB.getDernieresSessions(20);
-
-    if (sessions.length === 0) {
-      historyList.innerHTML = '';
-      historyEmpty.classList.remove('hidden');
+    if (total === 0) {
+      empty.classList.remove('hidden');
+      btnLoad.classList.add('hidden');
       return;
     }
 
-    historyEmpty.classList.add('hidden');
-    historyList.innerHTML = '';
-
-    sessions.forEach((session) => {
-      const card = document.createElement('div');
-      card.className = 'history-card';
-
-      const dateObj = new Date(session.date);
-      const dateStr = dateObj.toLocaleDateString('fr-BE', {
-        day: 'numeric', month: 'short', year: 'numeric'
-      });
-      const timeStr = dateObj.toLocaleTimeString('fr-BE', {
-        hour: '2-digit', minute: '2-digit'
-      });
-
-      const hasSummary = session.summary && session.summary.length > 0;
-      let summaryPreview = '';
-      if (hasSummary) {
-        const truncated = session.summary.length > 80
-          ? session.summary.substring(0, 80) + '\u2026'
-          : session.summary;
-        summaryPreview = '<p class="history-summary" title="Cliquer pour voir en entier">' + escapeHtml(truncated) + '</p>';
-      } else {
-        summaryPreview = '<p class="history-no-summary">Pas de r\u00e9sum\u00e9</p>';
-      }
-
-      const statusDot = hasSummary
-        ? '<span class="status-dot status-dot-green"></span>'
-        : '<span class="status-dot status-dot-yellow"></span>';
-
-      // Affichage de la qualité si disponible
-      let qualityDisplay = '';
-      if (session.qualityRating != null && session.qualityRating >= 1) {
-        const stars = '\u2605'.repeat(session.qualityRating) +
-                      '\u2606'.repeat(5 - session.qualityRating);
-        qualityDisplay = '<span class="history-quality" title="Qualit\u00e9 de concentration">' + stars + '</span>';
-      }
-
-      card.innerHTML = `
-        <div class="history-card-header">
-          <span class="history-date">${dateStr} \u00e0 ${timeStr}</span>
-          <div class="history-card-badges">
-            ${qualityDisplay}
-            ${statusDot}
-          </div>
-        </div>
-        <div class="history-card-body">
-          <div class="history-task-name">${escapeHtml(session.taskName)}</div>
-          <div class="history-meta">
-            ${session.subject ? escapeHtml(session.subject) + ' \u2014 ' : ''}${session.actualDuration || session.duration} min effective${(session.actualDuration || session.duration) > 1 ? 's' : ''}
-          </div>
-          ${summaryPreview}
-        </div>
-      `;
-
-      if (hasSummary) {
-        card.querySelector('.history-summary').addEventListener('click', () => {
-          ouvrirDetailResume(session.taskName, session.summary);
-        });
-      }
-
-      historyList.appendChild(card);
-    });
-  }
-
-  /** Ouvre le modal de détail d'un résumé */
-  function ouvrirDetailResume(taskName, summary) {
-    summaryDetailTitle.textContent = 'R\u00e9sum\u00e9 \u2014 ' + taskName;
-    summaryDetailText.textContent = summary;
-    summaryDetailModal.classList.remove('hidden');
-  }
-
-  // ---- Export CSV ----
-
-  async function exporterCSV() {
-    const sessions = await StudyDB.getToutesSessions();
-    if (sessions.length === 0) {
-      afficherToast('Aucune session \u00e0 exporter');
-      return;
-    }
-
-    // En-tête CSV (ajout qualité et heure)
-    const headers = [
-      'Date', 'Heure', 'T\u00e2che', 'Mati\u00e8re',
-      'Dur\u00e9e pr\u00e9vue (min)', 'Dur\u00e9e r\u00e9elle (min)',
-      'Difficult\u00e9', 'Qualit\u00e9 (1-5)', 'R\u00e9sum\u00e9', 'Compl\u00e9t\u00e9'
-    ];
-    const rows = [headers.join(';')];
+    empty.classList.add('hidden');
 
     sessions.forEach((s) => {
       const d = new Date(s.date);
-      const dateStr = d.toLocaleDateString('fr-BE');
+      const dateStr = d.toLocaleDateString('fr-BE', { day: 'numeric', month: 'short' });
       const timeStr = d.toLocaleTimeString('fr-BE', { hour: '2-digit', minute: '2-digit' });
-      const diffLabel = DIFFICULTY_LABELS[s.difficulty] || '';
-      const summaryClean = s.summary ? '"' + s.summary.replace(/"/g, '""') + '"' : '';
-      const qualite = s.qualityRating != null ? s.qualityRating : '';
+      const stars = s.qualityRating ? '\u2605'.repeat(s.qualityRating) + '\u2606'.repeat(5 - s.qualityRating) : '';
 
-      rows.push([
-        dateStr,
-        timeStr,
-        '"' + (s.taskName || '').replace(/"/g, '""') + '"',
-        '"' + (s.subject || '').replace(/"/g, '""') + '"',
-        s.duration,
-        s.actualDuration || '',
-        diffLabel,
-        qualite,
-        summaryClean,
-        s.completed ? 'Oui' : 'Non'
-      ].join(';'));
+      let dotClass = 'status-dot-grey';
+      if (s.completed && s.summary) dotClass = 'status-dot-green';
+      else if (s.completed) dotClass = 'status-dot-yellow';
+
+      const card = document.createElement('div');
+      card.className = 'history-card';
+      card.innerHTML =
+        '<div class="history-card-header">' +
+        '<span class="history-date">' + dateStr + ' \u00e0 ' + timeStr + '</span>' +
+        '<div class="history-card-badges">' +
+        '<span class="status-dot ' + dotClass + '"></span>' +
+        (stars ? '<span class="history-quality">' + stars + '</span>' : '') +
+        '</div></div>' +
+        '<div class="history-card-body">' +
+        '<p class="history-task-name">' + escapeHtml(s.taskName) + '</p>' +
+        '<p class="history-meta">' + escapeHtml(s.subject || '') + ' \u2022 ' + (s.actualDuration || s.duration) + ' min \u2022 ' + DIFFICULTY_LABELS[s.difficulty] + '</p>' +
+        (s.summary
+          ? '<p class="history-summary" data-summary="' + escapeAttr(s.summary) + '" data-task="' + escapeAttr(s.taskName) + '">' + escapeHtml(s.summary.substring(0, 120)) + (s.summary.length > 120 ? '...' : '') + '</p>'
+          : '<p class="history-no-summary">Pas de r\u00e9sum\u00e9</p>') +
+        '</div>';
+
+      list.appendChild(card);
     });
 
-    const csvContent = '\uFEFF' + rows.join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'study-sessions-' + new Date().toISOString().slice(0, 10) + '.csv';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-
-    afficherToast('Export CSV t\u00e9l\u00e9charg\u00e9');
-  }
-
-  // ---- Dialogue de confirmation ----
-
-  function afficherConfirmation(message, labelOui, callback) {
-    confirmMessage.textContent = message;
-    btnConfirmYes.textContent = labelOui;
-    confirmCallback = callback;
-    confirmDialog.classList.remove('hidden');
-  }
-
-  function fermerConfirmation() {
-    confirmDialog.classList.add('hidden');
-    confirmCallback = null;
-  }
-
-  // ---- Réinitialisation (nouvelle journée) ----
-
-  function nouvelleJournee() {
-    afficherConfirmation(
-      'Commencer une nouvelle journ\u00e9e\u00a0? Le contrat actuel sera effac\u00e9.',
-      'Oui, recommencer',
-      async () => {
-        const today = new Date().toISOString().slice(0, 10);
-        await StudyDB.supprimerContratDuJour(today);
-        contract = null;
-        creerFormulaireInitial();
-      }
-    );
-  }
-
-  // ---- Réinitialisation complète de l'application ----
-
-  function reinitialiserApp() {
-    afficherConfirmation(
-      'Supprimer toutes les données\u00a0? Sessions, contrats, flashcards et profil chronotype seront effacés définitivement.',
-      'Oui, tout supprimer',
-      async () => {
-        // Arrêter le timer si actif
-        if (timerInterval) {
-          clearInterval(timerInterval);
-          timerInterval = null;
-        }
-
-        // Supprimer toutes les données persistées
-        await StudyDB.reinitialiserTout();
-
-        // Réinitialiser l'état mémoire
-        contract = null;
-        currentTaskIndex = -1;
-        timerRemaining = 0;
-        timerTotal = 0;
-        timerPaused = false;
-        timerStartTime = null;
-        timerPausedTotal = 0;
-        timerPauseStart = null;
-        reviewCards = [];
-        reviewIndex = 0;
-        reviewFlipped = false;
-        pendingSuggestions = [];
-        pendingSuggestionSubject = '';
-        pendingSuggestionTaskName = '';
-
-        // Invalider le cache du dashboard
-        if (typeof StudyDashboard !== 'undefined') {
-          StudyDashboard.invaliderCache();
-        }
-
-        // Relancer l'onboarding
-        masquerAppPrincipale();
-        demarrerOnboarding();
-      }
-    );
-  }
-
-  // ---- Données de démonstration ----
-
-  function chargerDemo() {
-    const demoTasks = [
-      { name: 'R\u00e9sum\u00e9 chapitre 4', subject: 'Fran\u00e7ais', duration: 25, difficulty: 2, done: false },
-      { name: 'Exercices \u00e9quations', subject: 'Maths', duration: 50, difficulty: 3, done: false },
-      { name: 'Relire notes cours', subject: 'Sciences', duration: 25, difficulty: 1, done: false }
-    ];
-    taskListEl.innerHTML = '';
-    demoTasks.forEach((t) => ajouterCarteTache(t));
-    mettreAJourBoutons();
-  }
-
-  // ---- Navigation entre vues et onglets ----
-
-  function afficherVue(id) {
-    [viewContract, viewLocked, viewTimer].forEach((v) => v.classList.add('hidden'));
-    document.getElementById(id).classList.remove('hidden');
-
-    // Masquer la navigation quand on est dans le timer
-    if (id === 'viewTimer') {
-      appNav.classList.add('hidden');
-    } else {
-      appNav.classList.remove('hidden');
-    }
-  }
-
-  function changerOnglet(tab) {
-    activeTab = tab;
-
-    // Mettre à jour les classes actives des onglets
-    appNav.querySelectorAll('.nav-tab').forEach((btn) => {
-      btn.classList.toggle('active', btn.dataset.tab === tab);
-    });
-
-    // Masquer tous les onglets
-    tabMain.classList.add('hidden');
-    tabHistory.classList.add('hidden');
-    if (tabFlashcards) tabFlashcards.classList.add('hidden');
-    tabDashboard.classList.add('hidden');
-
-    if (tab === 'main') {
-      tabMain.classList.remove('hidden');
-    } else if (tab === 'history') {
-      tabHistory.classList.remove('hidden');
-      afficherHistorique();
-    } else if (tab === 'flashcards') {
-      if (tabFlashcards) {
-        tabFlashcards.classList.remove('hidden');
-        afficherFlashcards();
-      }
-    } else if (tab === 'dashboard') {
-      tabDashboard.classList.remove('hidden');
-      // Charger le dashboard chronobiologique
-      StudyDashboard.afficherDashboard();
-      // Afficher la carte chronotype dans le dashboard
-      afficherChronotypeCardDashboard();
-    }
-  }
-
-  // ---- Carte chronotype dans le dashboard ----
-
-  async function afficherChronotypeCardDashboard() {
-    if (!chronotypeCard) return;
-    const prefs = await StudyDB.getPreferences();
-    if (!prefs || !prefs.chronotypeLabel) {
-      chronotypeCard.style.display = 'none';
-      return;
-    }
-
-    const profil = CHRONOTYPE_PROFILES[prefs.detectedChronotype];
-    if (!profil) {
-      chronotypeCard.style.display = 'none';
-      return;
-    }
-
-    chronotypeCard.style.display = '';
-    chronotypeCardIcon.textContent = profil.icon;
-    chronotypeCardLabel.textContent = 'Profil ' + profil.label;
-
-    if (prefs.questionnaireDate) {
-      const date = new Date(prefs.questionnaireDate);
-      chronotypeCardDate.textContent = 'Test du ' + date.toLocaleDateString('fr-BE', {
-        day: 'numeric', month: 'long', year: 'numeric'
+    // Événements résumé
+    list.querySelectorAll('.history-summary').forEach((el) => {
+      el.addEventListener('click', () => {
+        document.getElementById('summaryDetailTitle').textContent = el.dataset.task;
+        document.getElementById('summaryDetailText').textContent = el.dataset.summary;
+        document.getElementById('summaryDetailModal').classList.remove('hidden');
       });
+    });
+
+    // Pagination
+    const loaded = historyOffset + sessions.length;
+    if (loaded < total) {
+      btnLoad.classList.remove('hidden');
     } else {
-      chronotypeCardDate.textContent = '';
+      btnLoad.classList.add('hidden');
     }
   }
 
-  /** Relance le questionnaire chronotype depuis le dashboard */
-  function relancerChronotype() {
-    masquerAppPrincipale();
-    tabDashboard.classList.add('hidden');
-    demarrerOnboarding();
+  function chargerPlusDeSessions() {
+    historyOffset += HISTORY_PAGE_SIZE;
+    chargerHistorique();
   }
 
-  // ---- Utilitaire : échappement HTML ----
+  // ==================================================================
+  // PARAMÈTRES
+  // ==================================================================
+
+  async function chargerParametres() {
+    // GDPR stats
+    const gdpr = await StudyExport.getStatistiquesGDPR();
+    document.getElementById('gdprTotalSessions').textContent = gdpr.totalSessions;
+    document.getElementById('gdprTotalFlashcards').textContent = gdpr.totalFlashcards;
+    document.getElementById('gdprPeriode').textContent = gdpr.periodeDebut
+      ? 'du ' + gdpr.periodeDebut + ' au ' + gdpr.periodeFin
+      : 'Aucune donn\u00e9e';
+    document.getElementById('gdprTaille').textContent = gdpr.tailleKo + ' Ko';
+
+    // Chronotype info
+    const prefs = await StudyDB.getPreferences();
+    const infoEl = document.getElementById('settingsChronotypeInfo');
+    if (prefs && prefs.chronotypeLabel) {
+      const dateTest = new Date(prefs.questionnaireDate);
+      infoEl.textContent = prefs.chronotypeLabel + ' (test du ' + dateTest.toLocaleDateString('fr-BE') + ')';
+    } else {
+      infoEl.textContent = 'Aucun profil d\u00e9tect\u00e9.';
+    }
+  }
+
+  // ==================================================================
+  // CHRONOTYPE CARD (Dashboard)
+  // ==================================================================
+
+  async function afficherChronotypeCard() {
+    const prefs = await StudyDB.getPreferences();
+    const card = document.getElementById('chronotypeCard');
+    if (prefs && prefs.detectedChronotype && CHRONOTYPE_PROFILES[prefs.detectedChronotype]) {
+      const profile = CHRONOTYPE_PROFILES[prefs.detectedChronotype];
+      document.getElementById('chronotypeCardIcon').textContent = profile.icon;
+      document.getElementById('chronotypeCardLabel').textContent = profile.label;
+      document.getElementById('chronotypeCardDate').textContent = 'Test du ' + new Date(prefs.questionnaireDate).toLocaleDateString('fr-BE');
+      card.style.display = 'flex';
+    } else {
+      card.style.display = 'none';
+    }
+  }
+
+  // ==================================================================
+  // TOOLTIPS CONTEXTUELS
+  // ==================================================================
+
+  function showTooltip(key, message) {
+    if (tooltipsShown[key]) return;
+    tooltipsShown[key] = true;
+    localStorage.setItem('studyproto_tooltips_shown', JSON.stringify(tooltipsShown));
+
+    const tooltip = document.getElementById('contextualTooltip');
+    const text = document.getElementById('contextualTooltipText');
+    text.textContent = message;
+    tooltip.classList.remove('hidden');
+
+    // Auto-dismiss après 8s
+    setTimeout(() => {
+      tooltip.classList.add('hidden');
+    }, 8000);
+  }
+
+  function dismissTooltip() {
+    document.getElementById('contextualTooltip').classList.add('hidden');
+  }
+
+  // ==================================================================
+  // IMPORT / EXPORT
+  // ==================================================================
+
+  async function exportCSV() {
+    const result = await StudyExport.exporterCSV();
+    if (result) afficherToast('Export CSV t\u00e9l\u00e9charg\u00e9');
+    else afficherToast('Aucune session \u00e0 exporter');
+  }
+
+  async function exportJSON() {
+    await StudyExport.exporterJSON();
+    afficherToast('Sauvegarde JSON t\u00e9l\u00e9charg\u00e9e');
+  }
+
+  function handleImportFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    pendingImportFile = file;
+    document.getElementById('importConfirmModal').classList.remove('hidden');
+    e.target.value = ''; // reset pour pouvoir re-sélectionner le même fichier
+  }
+
+  async function importMerge() {
+    document.getElementById('importConfirmModal').classList.add('hidden');
+    if (!pendingImportFile) return;
+    try {
+      const result = await StudyExport.importerJSON(pendingImportFile);
+      afficherToast('Import\u00e9 : ' + result.sessions + ' sessions, ' + result.flashcards + ' cartes');
+      StudyDashboard.invaliderCache();
+      pendingImportFile = null;
+      chargerParametres();
+    } catch (err) {
+      afficherToast('Erreur : ' + err.message);
+      pendingImportFile = null;
+    }
+  }
+
+  async function importReplace() {
+    document.getElementById('importConfirmModal').classList.add('hidden');
+    if (!pendingImportFile) return;
+
+    confirmer('Es-tu absolument s\u00fbr\u00b7e ? Toutes tes donn\u00e9es actuelles seront supprim\u00e9es.', async () => {
+      try {
+        await StudyDB.reinitialiserDonnees();
+        const result = await StudyExport.importerJSON(pendingImportFile);
+        afficherToast('Donn\u00e9es remplac\u00e9es : ' + result.sessions + ' sessions, ' + result.flashcards + ' cartes');
+        StudyDashboard.invaliderCache();
+        pendingImportFile = null;
+        chargerParametres();
+      } catch (err) {
+        afficherToast('Erreur : ' + err.message);
+        pendingImportFile = null;
+      }
+    });
+  }
+
+  function importCancel() {
+    document.getElementById('importConfirmModal').classList.add('hidden');
+    pendingImportFile = null;
+  }
+
+  // ==================================================================
+  // RESET COMPLET (triple confirmation)
+  // ==================================================================
+
+  function resetApp() {
+    confirmer('Supprimer toutes tes donn\u00e9es ? Cette action est irr\u00e9versible.', () => {
+      confirmer('Deuxi\u00e8me confirmation : es-tu vraiment s\u00fbr\u00b7e ?', () => {
+        confirmer('Derni\u00e8re chance : TOUTES les donn\u00e9es seront perdues.', async () => {
+          await StudyDB.reinitialiserDonnees();
+          StudyDashboard.invaliderCache();
+          afficherToast('Toutes les donn\u00e9es ont \u00e9t\u00e9 supprim\u00e9es');
+          contratDuJour = null;
+          changerOnglet('main');
+          afficherFormulaireContrat();
+        });
+      });
+    });
+  }
+
+  // ==================================================================
+  // UTILITAIRES UI
+  // ==================================================================
+
+  function show(id) { document.getElementById(id).classList.remove('hidden'); }
+  function hide(id) { document.getElementById(id).classList.add('hidden'); }
 
   function escapeHtml(str) {
     const el = document.createElement('span');
-    el.textContent = str;
+    el.textContent = str || '';
     return el.innerHTML;
   }
 
-  // ---- Enregistrement du Service Worker ----
-
-  function enregistrerServiceWorker() {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('./sw.js').catch(() => {
-        // Échec silencieux — l'app fonctionne sans SW
-      });
-    }
+  function escapeAttr(str) {
+    return (str || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
-  // ---- Attache des événements ----
+  function afficherToast(message, duree) {
+    const toast = document.getElementById('toast');
+    toast.textContent = message;
+    toast.classList.remove('hidden');
+    toast.classList.add('toast-visible');
+    toast.classList.remove('toast-hiding');
+
+    setTimeout(() => {
+      toast.classList.add('toast-hiding');
+      toast.classList.remove('toast-visible');
+      setTimeout(() => toast.classList.add('hidden'), 300);
+    }, duree || 2500);
+  }
+
+  function confirmer(message, onYes) {
+    document.getElementById('confirmMessage').textContent = message;
+    document.getElementById('confirmDialog').classList.remove('hidden');
+    document.getElementById('btnConfirmYes').onclick = () => {
+      document.getElementById('confirmDialog').classList.add('hidden');
+      onYes();
+    };
+    document.getElementById('btnConfirmNo').onclick = () => {
+      document.getElementById('confirmDialog').classList.add('hidden');
+    };
+  }
+
+  // ==================================================================
+  // ATTACHEMENT DES ÉVÉNEMENTS
+  // ==================================================================
 
   function attacherEvenements() {
-    // Formulaire de contrat
-    btnAddTask.addEventListener('click', () => {
-      if (taskListEl.children.length < MAX_TASKS) {
-        ajouterCarteTache();
-        mettreAJourBoutons();
-      }
+    // Navigation
+    document.querySelectorAll('.nav-tab').forEach((btn) => {
+      btn.addEventListener('click', () => changerOnglet(btn.dataset.tab));
     });
 
-    btnLockContract.addEventListener('click', verrouillerContrat);
-    btnLoadDemo.addEventListener('click', chargerDemo);
-    btnResetDay.addEventListener('click', nouvelleJournee);
-    if (btnResetApp) btnResetApp.addEventListener('click', reinitialiserApp);
+    // Welcome slides
+    document.getElementById('btnWelcomeNext').addEventListener('click', nextWelcomeSlide);
+
+    // Onboarding
+    document.getElementById('btnOnboardingPrev').addEventListener('click', onboardingPrevious);
+    document.getElementById('btnOnboardingNext').addEventListener('click', onboardingNext);
+    document.getElementById('btnOnboardingSkip').addEventListener('click', skipOnboarding);
+    document.getElementById('btnStartApp').addEventListener('click', startAppAfterOnboarding);
+
+    // Contrat
+    document.getElementById('btnAddTask').addEventListener('click', ajouterNouvelleTache);
+    document.getElementById('btnLockContract').addEventListener('click', verrouillerContrat);
+    document.getElementById('btnLoadDemo').addEventListener('click', chargerDemo);
+    document.getElementById('btnResetDay').addEventListener('click', () => {
+      confirmer('Cr\u00e9er un nouveau contrat ? Le contrat actuel sera supprim\u00e9.', resetDay);
+    });
 
     // Timer
-    btnPause.addEventListener('click', togglePause);
-    btnFinish.addEventListener('click', terminerSession);
-    btnAbandon.addEventListener('click', abandonnerSession);
-    btnBackToList.addEventListener('click', () => {
-      if (timerInterval) {
-        afficherConfirmation(
-          'Quitter la session en cours\u00a0? La t\u00e2che ne sera pas marqu\u00e9e comme accomplie.',
-          'Oui, quitter',
-          () => {
-            clearInterval(timerInterval);
-            timerInterval = null;
-            effacerEtatTimer();
-            retourContrat();
-          }
-        );
-      } else {
-        retourContrat();
-      }
+    document.getElementById('btnPause').addEventListener('click', togglePause);
+    document.getElementById('btnFinish').addEventListener('click', () => terminerSession(true));
+    document.getElementById('btnAbandon').addEventListener('click', abandonnerSession);
+    document.getElementById('btnBackToList').addEventListener('click', retourContrat);
+    document.getElementById('btnDismissBreak').addEventListener('click', () => {
+      document.getElementById('breakSuggestion').classList.add('hidden');
     });
 
-    btnDismissBreak.addEventListener('click', () => {
-      breakSuggestion.classList.add('hidden');
-      retourContrat();
+    // Modal résumé
+    document.getElementById('recallTextarea').addEventListener('input', updateRecallCounter);
+    document.getElementById('btnRecallSave').addEventListener('click', sauvegarderResume);
+    document.getElementById('btnRecallSkip').addEventListener('click', skipResume);
+
+    // Modal qualité
+    document.querySelectorAll('.quality-star').forEach((star) => {
+      star.addEventListener('click', () => selectQuality(parseInt(star.dataset.rating)));
+    });
+    document.getElementById('btnQualitySave').addEventListener('click', sauvegarderQualite);
+    document.getElementById('btnQualitySkip').addEventListener('click', skipQuality);
+
+    // Modal résumé détail
+    document.getElementById('btnCloseSummaryDetail').addEventListener('click', () => {
+      document.getElementById('summaryDetailModal').classList.add('hidden');
     });
 
-    // Dialogue de confirmation
-    btnConfirmYes.addEventListener('click', () => {
-      if (confirmCallback) confirmCallback();
-      fermerConfirmation();
-    });
-    btnConfirmNo.addEventListener('click', fermerConfirmation);
-
-    // Navigation par onglets
-    appNav.querySelectorAll('.nav-tab').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        changerOnglet(btn.dataset.tab);
-      });
+    // Modal suggestion flashcards
+    document.getElementById('btnFlashcardSuggestionSave').addEventListener('click', sauvegarderSuggestionsFlashcards);
+    document.getElementById('btnFlashcardSuggestionSkip').addEventListener('click', () => {
+      document.getElementById('flashcardSuggestionModal').classList.add('hidden');
     });
 
-    // ---- Modal récupération active ----
+    // Flashcards
+    document.getElementById('btnStartReview').addEventListener('click', () => demarrerRevision('due'));
+    document.getElementById('btnReviewAll').addEventListener('click', () => demarrerRevision('all'));
+    document.getElementById('btnCreateManualFlashcard').addEventListener('click', ouvrirCreationManuelle);
+    document.getElementById('btnManualFlashcardSave').addEventListener('click', sauvegarderFlashcardManuelle);
+    document.getElementById('btnManualFlashcardCancel').addEventListener('click', () => {
+      document.getElementById('flashcardManualModal').classList.add('hidden');
+    });
+    document.getElementById('flashcardFilterSubject').addEventListener('change', afficherFlashcards);
 
-    recallTextarea.addEventListener('input', () => {
-      const len = recallTextarea.value.trim().length;
-      recallCharCount.textContent = len;
-      btnRecallSave.disabled = len < MIN_RECALL_CHARS;
+    // Révision SM-2
+    document.getElementById('flashcardFlipContainer').addEventListener('click', flipCard);
+    document.getElementById('btnRevealAnswer').addEventListener('click', revelerReponse);
+    document.getElementById('btnReviewHard').addEventListener('click', () => repondreRevision(1));
+    document.getElementById('btnReviewMedium').addEventListener('click', () => repondreRevision(3));
+    document.getElementById('btnReviewEasy').addEventListener('click', () => repondreRevision(5));
+    document.getElementById('btnCloseReview').addEventListener('click', fermerRevision);
 
-      const counterEl = recallCharCount.parentElement;
-      if (len >= MIN_RECALL_CHARS) {
-        counterEl.classList.add('recall-counter-ok');
-      } else {
-        counterEl.classList.remove('recall-counter-ok');
-      }
+    // Historique
+    document.getElementById('btnLoadMore').addEventListener('click', chargerPlusDeSessions);
+    document.getElementById('btnExportCSV').addEventListener('click', exportCSV);
+
+    // Dashboard
+    document.getElementById('btnWeekPrev').addEventListener('click', () => StudyDashboard.semainePrecedente());
+    document.getElementById('btnWeekNext').addEventListener('click', () => StudyDashboard.semaineSuivante());
+    document.getElementById('btnExportHeatmap').addEventListener('click', () => StudyDashboard.exporterPNG('heatmap'));
+    document.getElementById('btnExportQualite').addEventListener('click', () => StudyDashboard.exporterPNG('qualite'));
+    document.getElementById('btnRefaireChronotype').addEventListener('click', afficherOnboarding);
+
+    // Paramètres
+    document.querySelectorAll('input[name="theme"]').forEach((radio) => {
+      radio.addEventListener('change', () => setTheme(radio.value));
+    });
+    document.getElementById('btnSettingsChronotype').addEventListener('click', afficherOnboarding);
+    document.getElementById('btnExportCSVSettings').addEventListener('click', exportCSV);
+    document.getElementById('btnExportJSON').addEventListener('click', exportJSON);
+    document.getElementById('importJSONInput').addEventListener('change', handleImportFile);
+    document.getElementById('btnImportMerge').addEventListener('click', importMerge);
+    document.getElementById('btnImportReplace').addEventListener('click', importReplace);
+    document.getElementById('btnImportCancel').addEventListener('click', importCancel);
+    document.getElementById('btnResetApp').addEventListener('click', resetApp);
+
+    // Tooltip
+    document.getElementById('btnTooltipDismiss').addEventListener('click', dismissTooltip);
+
+    // Thème auto - écouter les changements système
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      const saved = localStorage.getItem('studyproto_theme');
+      if (saved === 'auto') setTheme('auto');
     });
 
-    btnRecallSave.addEventListener('click', () => {
-      const summary = recallTextarea.value.trim();
-      if (summary.length < MIN_RECALL_CHARS) return;
-      if (recallCallback) {
-        recallCallback(summary, false);
-      }
-      fermerRecallModal();
-    });
-
-    btnRecallSkip.addEventListener('click', () => {
-      if (recallCallback) {
-        recallCallback(null, true);
-      }
-      fermerRecallModal();
-    });
-
-    // ---- Modal évaluation qualité ----
-
-    // Clic sur une étoile
-    qualityStarsEl.querySelectorAll('.quality-star').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        selectedQuality = parseInt(btn.dataset.rating, 10);
-        mettreAJourEtoiles();
-        qualitySelectedLabel.textContent = QUALITY_LABELS[selectedQuality] || '';
-        btnQualitySave.disabled = false;
-      });
-    });
-
-    btnQualitySave.addEventListener('click', () => {
-      if (selectedQuality >= 1 && qualityCallback) {
-        qualityCallback(selectedQuality);
-      }
-      fermerQualityModal();
-    });
-
-    btnQualitySkip.addEventListener('click', () => {
-      if (qualityCallback) {
-        qualityCallback(null);
-      }
-      fermerQualityModal();
-    });
-
-    // ---- Modal détail résumé ----
-    btnCloseSummaryDetail.addEventListener('click', () => {
-      summaryDetailModal.classList.add('hidden');
-    });
-
-    // Export CSV
-    btnExportCSV.addEventListener('click', exporterCSV);
-
-    // ---- Dashboard : navigation heatmap et exports PNG ----
-    const btnWeekPrev = $('#btnWeekPrev');
-    const btnWeekNext = $('#btnWeekNext');
-    const btnExportHeatmap = $('#btnExportHeatmap');
-    const btnExportQualite = $('#btnExportQualite');
-
-    if (btnWeekPrev) btnWeekPrev.addEventListener('click', StudyDashboard.semainePrecedente);
-    if (btnWeekNext) btnWeekNext.addEventListener('click', StudyDashboard.semaineSuivante);
-    if (btnExportHeatmap) btnExportHeatmap.addEventListener('click', () => StudyDashboard.exporterPNG('heatmap'));
-    if (btnExportQualite) btnExportQualite.addEventListener('click', () => StudyDashboard.exporterPNG('qualite'));
-
-    // ---- Flashcard Suggestion Modal ----
-    if (btnFlashcardSuggestionSave) {
-      btnFlashcardSuggestionSave.addEventListener('click', sauvegarderFlashcardsSuggestions);
+    // Swipe sur welcome slides (mobile)
+    let touchStartX = 0;
+    const welcomeEl = document.getElementById('welcomeSlides');
+    if (welcomeEl) {
+      welcomeEl.addEventListener('touchstart', (e) => { touchStartX = e.touches[0].clientX; }, { passive: true });
+      welcomeEl.addEventListener('touchend', (e) => {
+        const diff = touchStartX - e.changedTouches[0].clientX;
+        if (Math.abs(diff) > 50) {
+          if (diff > 0 && welcomeSlide < 3) { welcomeSlide++; renderWelcomeSlide(); }
+          else if (diff < 0 && welcomeSlide > 0) { welcomeSlide--; renderWelcomeSlide(); }
+        }
+      }, { passive: true });
     }
-    if (btnFlashcardSuggestionSkip) {
-      btnFlashcardSuggestionSkip.addEventListener('click', () => {
-        flashcardSuggestionModal.classList.add('hidden');
-        pendingSuggestions = [];
-      });
-    }
-
-    // ---- Flashcard Manual Modal ----
-    if (btnCreateManualFlashcard) {
-      btnCreateManualFlashcard.addEventListener('click', ouvrirFlashcardManualModal);
-    }
-    if (btnManualFlashcardSave) {
-      btnManualFlashcardSave.addEventListener('click', sauvegarderFlashcardManuelle);
-    }
-    if (btnManualFlashcardCancel) {
-      btnManualFlashcardCancel.addEventListener('click', () => {
-        flashcardManualModal.classList.add('hidden');
-      });
-    }
-
-    // ---- Flashcard Review Modal ----
-    if (btnStartReview) {
-      btnStartReview.addEventListener('click', demarrerRevision);
-    }
-    if (btnRevealAnswer) {
-      btnRevealAnswer.addEventListener('click', revelerReponse);
-    }
-    if (btnReviewKnew) {
-      btnReviewKnew.addEventListener('click', revisionJeSavais);
-    }
-    if (btnReviewRetry) {
-      btnReviewRetry.addEventListener('click', revisionARevoir);
-    }
-    if (btnCloseReview) {
-      btnCloseReview.addEventListener('click', () => {
-        flashcardReviewModal.classList.add('hidden');
-        if (activeTab === 'flashcards') afficherFlashcards();
-      });
-    }
-    // Clic sur le conteneur de carte pour retourner
-    if (flashcardFlipContainer) {
-      flashcardFlipContainer.addEventListener('click', () => {
-        if (!reviewFlipped) revelerReponse();
-      });
-    }
-
-    // ---- Flashcard Filter ----
-    if (flashcardFilterSubject) {
-      flashcardFilterSubject.addEventListener('change', afficherListeFlashcards);
-    }
-
-    // ---- Dashboard : Refaire le test chronotype ----
-    if (btnRefaireChronotype) {
-      btnRefaireChronotype.addEventListener('click', relancerChronotype);
-    }
-
-    // Sauvegarde de l'état du timer avant fermeture/refresh de la page
-    window.addEventListener('beforeunload', () => {
-      if (timerInterval && currentTaskIndex >= 0) {
-        sauvegarderEtatTimer();
-      }
-    });
   }
 
-  // ---- Lancement ----
-  document.addEventListener('DOMContentLoaded', init);
+  // ==================================================================
+  // DONNÉES DE TEST (accessible via console)
+  // ==================================================================
+
+  window.genererDonneesTest = async function () {
+    const matieres = ['Maths', 'Fran\u00e7ais', 'Sciences', 'Histoire', 'Anglais', 'Physique', 'Chimie'];
+    const taches = ['Exercices', 'R\u00e9sum\u00e9', 'R\u00e9vision', 'Lecture', 'Probl\u00e8mes', 'Notes de cours', 'Pr\u00e9paration examen'];
+    const maintenant = Date.now();
+    let count = 0;
+
+    for (let i = 0; i < 50; i++) {
+      const joursAvant = Math.floor(Math.random() * 28);
+      let heure;
+      const r = Math.random();
+      if (r < 0.35) heure = 16 + Math.floor(Math.random() * 3);
+      else if (r < 0.6) heure = 9 + Math.floor(Math.random() * 3);
+      else if (r < 0.8) heure = 13 + Math.floor(Math.random() * 3);
+      else heure = 6 + Math.floor(Math.random() * 17);
+
+      const dateSession = new Date(maintenant);
+      dateSession.setDate(dateSession.getDate() - joursAvant);
+      dateSession.setHours(heure, Math.floor(Math.random() * 60), 0, 0);
+
+      // Qualité corrélée à l'heure
+      let qualite;
+      if (heure >= 16 && heure <= 19) qualite = 3 + Math.floor(Math.random() * 3);
+      else if (heure >= 9 && heure <= 11) qualite = 2 + Math.floor(Math.random() * 3);
+      else qualite = 1 + Math.floor(Math.random() * 3);
+      qualite = Math.min(5, Math.max(1, qualite));
+
+      // Plus de sessions en semaine
+      const dow = dateSession.getDay();
+      if ((dow === 0 || dow === 6) && Math.random() < 0.4) continue;
+
+      const duree = Math.random() > 0.5 ? 50 : 25;
+      const matiere = matieres[Math.floor(Math.random() * matieres.length)];
+      const tache = taches[Math.floor(Math.random() * taches.length)];
+
+      await StudyDB.enregistrerSession({
+        taskName: tache + ' ' + matiere,
+        subject: matiere,
+        date: dateSession.getTime(),
+        duration: duree,
+        actualDuration: duree - Math.floor(Math.random() * 5),
+        difficulty: 1 + Math.floor(Math.random() * 3),
+        summary: Math.random() > 0.3 ? 'R\u00e9sum\u00e9 de la session ' + (i + 1) + ' : travail sur ' + tache.toLowerCase() + ' en ' + matiere.toLowerCase() + '. Concepts importants retenus.' : null,
+        completed: Math.random() > 0.1,
+        qualityRating: qualite,
+        hourOfDay: heure
+      });
+      count++;
+    }
+
+    // Quelques flashcards de test
+    const flashcardExamples = [
+      { q: 'Qu\'est-ce que la photosynthèse ?', a: 'La photosynthèse est le processus par lequel les plantes convertissent la lumière en énergie chimique.', s: 'Sciences' },
+      { q: 'Théorème de Pythagore', a: 'Dans un triangle rectangle, le carré de l\'hypoténuse est égal à la somme des carrés des deux autres côtés : a² + b² = c²', s: 'Maths' },
+      { q: 'Qu\'est-ce qu\'une métaphore ?', a: 'Figure de style qui établit une comparaison implicite entre deux éléments sans utiliser de mot de comparaison.', s: 'Français' },
+      { q: 'Date de la Révolution française', a: '1789 - Prise de la Bastille le 14 juillet', s: 'Histoire' },
+      { q: 'Formule de la vitesse', a: 'v = d/t (vitesse = distance / temps)', s: 'Physique' }
+    ];
+
+    for (const fc of flashcardExamples) {
+      await StudyDB.ajouterFlashcard({
+        question: fc.q, answer: fc.a, subject: fc.s, taskName: '',
+        createdDate: Date.now() - Math.floor(Math.random() * 86400000 * 7),
+        reviewCount: Math.floor(Math.random() * 4),
+        lastReviewed: Math.random() > 0.5 ? Date.now() - Math.floor(Math.random() * 86400000 * 3) : null,
+        difficulty: 1 + Math.floor(Math.random() * 3),
+        easinessFactor: 2.5,
+        interval: 1 + Math.floor(Math.random() * 5),
+        nextReviewDate: Date.now() + Math.floor(Math.random() * 86400000 * 3) - 86400000
+      });
+    }
+
+    StudyDashboard.invaliderCache();
+    console.info('[StudyApp] ' + count + ' sessions et ' + flashcardExamples.length + ' flashcards de test créées.');
+    console.info('[StudyApp] Recharge la page ou navigue vers les onglets pour voir les données.');
+    return count;
+  };
 
 })();

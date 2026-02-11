@@ -1,14 +1,15 @@
-// Service Worker — Study Protocol Manager (v4)
-// Permet le fonctionnement hors-ligne après la première visite.
-// Version 4 : étape 4 — questionnaire chronotype, flashcards, mode révision.
+// Service Worker — Study Protocol Manager (v5 finale)
+// Stratégie : Cache First pour assets statiques, Network Only pour données.
+// Update prompt si nouvelle version détectée.
 
-const CACHE_NAME = 'study-proto-v4';
+const CACHE_NAME = 'study-proto-v5';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
   './db.js',
   './dashboard.js',
+  './export.js',
   './app.js',
   './manifest.json',
   './icons/icon-192.png',
@@ -35,9 +36,28 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Stratégie cache-first : servir depuis le cache, sinon réseau
+// Stratégie cache-first pour assets, network-only pour données
 self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+
+  // Ne pas cacher les requêtes POST ou les URLs externes
+  if (event.request.method !== 'GET' || url.origin !== location.origin) {
+    return;
+  }
+
   event.respondWith(
-    caches.match(event.request).then((cached) => cached || fetch(event.request))
+    caches.match(event.request).then((cached) => {
+      if (cached) return cached;
+      return fetch(event.request).then((response) => {
+        // Cacher les nouvelles ressources statiques
+        if (response.ok && response.type === 'basic') {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, clone);
+          });
+        }
+        return response;
+      });
+    })
   );
 });
