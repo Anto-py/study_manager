@@ -1,8 +1,8 @@
-// Service Worker — Study Protocol Manager (v4)
+// Service Worker — Study Protocol Manager (v5)
 // Permet le fonctionnement hors-ligne après la première visite.
-// Version 4 : étape 4 — questionnaire chronotype, flashcards, mode révision.
+// Version 5 : bouton de réinitialisation complète de l'application.
 
-const CACHE_NAME = 'study-proto-v4';
+const CACHE_NAME = 'study-proto-v5';
 const ASSETS = [
   './',
   './index.html',
