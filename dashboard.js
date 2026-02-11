@@ -1,5 +1,5 @@
 // ============================================================
-// Study Protocol Manager — Module Dashboard (étape 3)
+// Study Protocol Manager — Module Dashboard (étape 4)
 // Dashboard chronobiologique : heatmap, graphique qualité,
 // statistiques, détection de patterns, export PNG.
 //

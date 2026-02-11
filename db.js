@@ -1,5 +1,5 @@
 // ============================================================
-// Study Protocol Manager — Module IndexedDB (étape 3)
+// Study Protocol Manager — Module IndexedDB (étape 4)
 // Gère la persistance via IndexedDB avec fallback localStorage.
 // Migration automatique des données localStorage existantes.
 //
@@ -7,23 +7,26 @@
 //   - "contracts"       : contrats quotidiens
 //   - "sessions"        : sessions de travail (+ qualityRating, hourOfDay)
 //   - "userPreferences" : préférences chronobiologiques de l'utilisateur
+//   - "flashcards"      : cartes de révision générées ou manuelles
 // ============================================================
 
 /**
  * Module DB exposé globalement via window.StudyDB
  *
- * Version 2 du schéma :
- *   - Ajout du champ hourOfDay (index) et qualityRating aux sessions
- *   - Nouveau store "userPreferences" pour les préférences horaires
+ * Version 3 du schéma :
+ *   - Nouveau store "flashcards" pour les cartes de révision
+ *   - Champs : question, answer, subject, taskName, createdDate,
+ *              reviewCount, lastReviewed, difficulty
  */
 const StudyDB = (function () {
   'use strict';
 
   const DB_NAME = 'StudyProtocolDB';
-  const DB_VERSION = 2; // v2 : ajout userPreferences + index hourOfDay
+  const DB_VERSION = 3; // v3 : ajout store flashcards
   const STORE_CONTRACTS = 'contracts';
   const STORE_SESSIONS = 'sessions';
   const STORE_PREFS = 'userPreferences';
+  const STORE_FLASHCARDS = 'flashcards';
   const LEGACY_KEY = 'studyproto_contract';
 
   let db = null; // référence à la base IDBDatabase
@@ -88,6 +91,19 @@ const StudyDB = (function () {
               keyPath: 'id',
               autoIncrement: true
             });
+          }
+        }
+
+        // ---- Version 2 → 3 : ajout store flashcards ----
+        if (oldVersion < 3) {
+          if (!database.objectStoreNames.contains(STORE_FLASHCARDS)) {
+            const flashcardStore = database.createObjectStore(STORE_FLASHCARDS, {
+              keyPath: 'id',
+              autoIncrement: true
+            });
+            flashcardStore.createIndex('subject', 'subject', { unique: false });
+            flashcardStore.createIndex('createdDate', 'createdDate', { unique: false });
+            flashcardStore.createIndex('lastReviewed', 'lastReviewed', { unique: false });
           }
         }
       };
@@ -323,11 +339,15 @@ const StudyDB = (function () {
 
   /**
    * Sauvegarde les préférences utilisateur (chronotype, créneaux préférés).
-   * Structure attendue :
+   * Structure attendue (étape 4) :
    *   {
    *     id: 1,  (toujours 1, une seule entrée)
    *     preferredTimeSlots: ["16:00-19:00"],
-   *     detectedChronotype: "matinal" | "vespertinus" | "non_détecté",
+   *     detectedChronotype: "matinal" | "intermédiaire" | "vespertinus" | "non_détecté",
+   *     chronotypeScore: 5-25 (score du questionnaire),
+   *     chronotypeLabel: "matinal" | "intermédiaire" | "vespertinus",
+   *     optimalTimeSlots: ["8h-12h", "14h-17h"],
+   *     questionnaireDate: timestamp,
    *     lastUpdated: timestamp
    *   }
    */
@@ -360,6 +380,151 @@ const StudyDB = (function () {
     });
   }
 
+  // ==== OPÉRATIONS SUR LES FLASHCARDS ====
+
+  /**
+   * Ajoute une flashcard en base.
+   * Structure attendue :
+   *   {
+   *     question: string,
+   *     answer: string,
+   *     subject: string (matière héritée de la session),
+   *     taskName: string (référence à la tâche),
+   *     createdDate: timestamp,
+   *     reviewCount: 0 (nombre de révisions),
+   *     lastReviewed: null (timestamp ou null),
+   *     difficulty: 1-3 (auto-ajusté)
+   *   }
+   */
+  function ajouterFlashcard(flashcard) {
+    if (!db) {
+      const cards = JSON.parse(localStorage.getItem('studyproto_flashcards') || '[]');
+      flashcard.id = Date.now() + Math.floor(Math.random() * 1000);
+      cards.push(flashcard);
+      localStorage.setItem('studyproto_flashcards', JSON.stringify(cards));
+      return Promise.resolve(flashcard.id);
+    }
+
+    return execTransaction(STORE_FLASHCARDS, 'readwrite', (store) => {
+      return store.add(flashcard);
+    });
+  }
+
+  /** Met à jour une flashcard existante (après révision) */
+  function mettreAJourFlashcard(flashcard) {
+    if (!db) {
+      const cards = JSON.parse(localStorage.getItem('studyproto_flashcards') || '[]');
+      const idx = cards.findIndex((c) => c.id === flashcard.id);
+      if (idx >= 0) {
+        cards[idx] = flashcard;
+        localStorage.setItem('studyproto_flashcards', JSON.stringify(cards));
+      }
+      return Promise.resolve();
+    }
+
+    return execTransaction(STORE_FLASHCARDS, 'readwrite', (store) => {
+      return store.put(flashcard);
+    });
+  }
+
+  /** Supprime une flashcard par son id */
+  function supprimerFlashcard(id) {
+    if (!db) {
+      const cards = JSON.parse(localStorage.getItem('studyproto_flashcards') || '[]');
+      const filtered = cards.filter((c) => c.id !== id);
+      localStorage.setItem('studyproto_flashcards', JSON.stringify(filtered));
+      return Promise.resolve();
+    }
+
+    return execTransaction(STORE_FLASHCARDS, 'readwrite', (store) => {
+      return store.delete(id);
+    });
+  }
+
+  /** Récupère toutes les flashcards, triées par date de création décroissante */
+  function getToutesFlashcards() {
+    if (!db) {
+      const cards = JSON.parse(localStorage.getItem('studyproto_flashcards') || '[]');
+      cards.sort((a, b) => b.createdDate - a.createdDate);
+      return Promise.resolve(cards);
+    }
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_FLASHCARDS, 'readonly');
+      const store = tx.objectStore(STORE_FLASHCARDS);
+      const request = store.getAll();
+
+      request.onsuccess = () => {
+        const results = request.result;
+        results.sort((a, b) => b.createdDate - a.createdDate);
+        resolve(results);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * Récupère les flashcards filtrées par matière.
+   * Si matiere est vide/null, retourne toutes les flashcards.
+   */
+  function getFlashcardsParMatiere(matiere) {
+    if (!matiere) return getToutesFlashcards();
+
+    if (!db) {
+      const cards = JSON.parse(localStorage.getItem('studyproto_flashcards') || '[]');
+      return Promise.resolve(
+        cards.filter((c) => c.subject === matiere)
+             .sort((a, b) => b.createdDate - a.createdDate)
+      );
+    }
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_FLASHCARDS, 'readonly');
+      const store = tx.objectStore(STORE_FLASHCARDS);
+      const index = store.index('subject');
+      const request = index.getAll(matiere);
+
+      request.onsuccess = () => {
+        const results = request.result;
+        results.sort((a, b) => b.createdDate - a.createdDate);
+        resolve(results);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * Compte le nombre total de flashcards et celles maîtrisées.
+   * Une carte est considérée "maîtrisée" si reviewCount >= 3 et difficulty <= 1.
+   */
+  async function getStatsFlashcards() {
+    const cards = await getToutesFlashcards();
+    const total = cards.length;
+    const maitrisees = cards.filter(
+      (c) => c.reviewCount >= 3 && c.difficulty <= 1
+    ).length;
+    return { total, maitrisees };
+  }
+
+  /**
+   * Vérifie si la base contient des données (utilisé pour détecter la première utilisation).
+   * Retourne true si aucune session ET aucun contrat ET aucune préférence n'existent.
+   */
+  async function estPremiereUtilisation() {
+    const prefs = await getPreferences();
+    // Si des préférences existent avec un chronotype défini, ce n'est pas la première utilisation
+    if (prefs && prefs.chronotypeScore) return false;
+
+    const sessions = await getDernieresSessions(1);
+    if (sessions.length > 0) return false;
+
+    const today = new Date().toISOString().slice(0, 10);
+    const contrat = await getContratParDate(today);
+    if (contrat) return false;
+
+    return true;
+  }
+
   // ==== API PUBLIQUE ====
   return {
     init: init,
@@ -372,6 +537,14 @@ const StudyDB = (function () {
     getToutesSessions: getToutesSessions,
     getSessionsParPeriode: getSessionsParPeriode,
     sauvegarderPreferences: sauvegarderPreferences,
-    getPreferences: getPreferences
+    getPreferences: getPreferences,
+    // Flashcards (étape 4)
+    ajouterFlashcard: ajouterFlashcard,
+    mettreAJourFlashcard: mettreAJourFlashcard,
+    supprimerFlashcard: supprimerFlashcard,
+    getToutesFlashcards: getToutesFlashcards,
+    getFlashcardsParMatiere: getFlashcardsParMatiere,
+    getStatsFlashcards: getStatsFlashcards,
+    estPremiereUtilisation: estPremiereUtilisation
   };
 })();

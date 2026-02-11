@@ -1,8 +1,8 @@
-// Service Worker — Study Protocol Manager (v3)
+// Service Worker — Study Protocol Manager (v4)
 // Permet le fonctionnement hors-ligne après la première visite.
-// Version 3 : ajout de dashboard.js au cache.
+// Version 4 : étape 4 — questionnaire chronotype, flashcards, mode révision.
 
-const CACHE_NAME = 'study-proto-v3';
+const CACHE_NAME = 'study-proto-v4';
 const ASSETS = [
   './',
   './index.html',

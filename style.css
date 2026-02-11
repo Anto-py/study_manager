@@ -1,9 +1,10 @@
 /* ============================================================
-   Study Protocol Manager — Feuille de styles (étape 3)
+   Study Protocol Manager — Feuille de styles (étape 4)
    Palette apaisante : bleus/verts doux, sans rouge agressif.
    Mobile-first, responsive.
-   Nouveaux composants : dashboard chronobiologique, heatmap,
-   graphique qualité, étoiles, insights, suggestion créneau.
+   Composants : dashboard chronobiologique, heatmap,
+   graphique qualité, étoiles, insights, suggestion créneau,
+   onboarding chronotype, flashcards, mode révision flip.
    ============================================================ */
 
 /* ---------- Variables globales ---------- */
@@ -1079,15 +1080,562 @@ main {
   font-size: .82rem;
 }
 
+/* ========================================================================
+   ONBOARDING / QUESTIONNAIRE CHRONOTYPE (étape 4)
+   ======================================================================== */
+
+.onboarding-screen {
+  position: fixed;
+  inset: 0;
+  background: var(--color-bg);
+  z-index: 400;
+  overflow-y: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.onboarding-container {
+  background: var(--color-surface);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  max-width: 480px;
+  width: 100%;
+  box-shadow: 0 8px 30px rgba(0,0,0,.1);
+}
+.onboarding-header {
+  text-align: center;
+  margin-bottom: 1.25rem;
+}
+.onboarding-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  margin-bottom: .35rem;
+}
+.onboarding-subtitle {
+  font-size: .85rem;
+  color: var(--color-text-light);
+  line-height: 1.45;
+}
+
+/* Barre de progression */
+.onboarding-progress {
+  background: var(--color-border);
+  border-radius: 999px;
+  height: 6px;
+  margin-bottom: .4rem;
+  overflow: hidden;
+}
+.onboarding-progress-bar {
+  background: var(--color-primary);
+  height: 100%;
+  border-radius: 999px;
+  transition: width .35s ease;
+}
+.onboarding-step-label {
+  font-size: .75rem;
+  color: var(--color-text-light);
+  text-align: center;
+  margin-bottom: 1rem;
+  font-weight: 600;
+}
+
+/* Questions */
+.onboarding-question-text {
+  font-size: .95rem;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: .75rem;
+  line-height: 1.45;
+}
+.onboarding-options {
+  display: flex;
+  flex-direction: column;
+  gap: .4rem;
+}
+.onboarding-option {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .65rem .8rem;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color .2s, background .2s;
+}
+.onboarding-option:hover {
+  border-color: var(--color-primary-light);
+  background: #e8f1f5;
+}
+.onboarding-option input[type="radio"] {
+  accent-color: var(--color-primary);
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+.onboarding-option input[type="radio"]:checked + .onboarding-option-label {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+.onboarding-option-label {
+  font-size: .88rem;
+  color: var(--color-text);
+}
+
+/* Navigation onboarding */
+.onboarding-nav {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 1.25rem;
+  gap: .5rem;
+}
+.onboarding-skip {
+  display: block;
+  text-align: center;
+  margin-top: .75rem;
+  font-size: .78rem;
+}
+
+/* ========================================================================
+   RÉSULTAT CHRONOTYPE (étape 4)
+   ======================================================================== */
+
+.chronotype-result {
+  text-align: center;
+}
+.chronotype-icon {
+  font-size: 3rem;
+  margin-bottom: .5rem;
+}
+.chronotype-result-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  margin-bottom: .5rem;
+}
+.chronotype-result-desc {
+  font-size: .88rem;
+  color: var(--color-text);
+  line-height: 1.5;
+  margin-bottom: 1.25rem;
+}
+.chronotype-slots {
+  background: var(--color-bg);
+  border-radius: var(--radius);
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+.chronotype-slots h3 {
+  font-size: .85rem;
+  font-weight: 700;
+  color: var(--color-text);
+  margin-bottom: .6rem;
+}
+.chronotype-slots-list {
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+}
+.chronotype-slot-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: .5rem .75rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+.chronotype-slot-time {
+  font-size: .95rem;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+.chronotype-slot-label {
+  font-size: .78rem;
+  color: var(--color-text-light);
+}
+.chronotype-reference {
+  font-size: .72rem;
+  color: var(--color-text-light);
+  margin-bottom: 1rem;
+  font-style: italic;
+}
+
+/* ========================================================================
+   BADGE CRÉNEAU OPTIMAL (étape 4)
+   ======================================================================== */
+
+.badge-creneau {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: .6rem .85rem;
+  margin-bottom: .75rem;
+  font-size: .82rem;
+  color: var(--color-text);
+  text-align: center;
+}
+.badge-creneau-actif {
+  background: #e8f5ee;
+  border-color: #b2d8c4;
+  color: #2d6a4f;
+  font-weight: 600;
+}
+
+/* ========================================================================
+   CARTE CHRONOTYPE DANS LE DASHBOARD (étape 4)
+   ======================================================================== */
+
+.chronotype-card {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: .85rem 1rem;
+  margin-bottom: 1rem;
+  box-shadow: var(--shadow);
+}
+.chronotype-card-icon {
+  font-size: 2rem;
+  flex-shrink: 0;
+}
+.chronotype-card-info {
+  flex: 1;
+  min-width: 0;
+}
+.chronotype-card-label {
+  font-size: .92rem;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+.chronotype-card-date {
+  font-size: .75rem;
+  color: var(--color-text-light);
+}
+
+/* ========================================================================
+   ONGLET FLASHCARDS (étape 4)
+   ======================================================================== */
+
+/* Stats en haut */
+.flashcard-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: .5rem;
+  margin-bottom: 1rem;
+}
+.flashcard-stat-item {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: .7rem .5rem;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+.flashcard-stat-value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--color-primary);
+  display: block;
+}
+.flashcard-stat-label {
+  font-size: .72rem;
+  color: var(--color-text-light);
+  font-weight: 600;
+}
+
+/* Filtre matière */
+.flashcard-filter {
+  margin-bottom: .75rem;
+}
+.flashcard-filter label {
+  font-size: .78rem;
+  font-weight: 600;
+  color: var(--color-text-light);
+  display: block;
+  margin-bottom: .25rem;
+}
+.flashcard-filter-select {
+  width: 100%;
+  padding: .45rem .6rem;
+  font-size: .88rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+/* Actions */
+.flashcard-actions {
+  display: flex;
+  gap: .5rem;
+  margin-bottom: 1rem;
+}
+.flashcard-actions .btn {
+  flex: 1;
+}
+
+/* Liste de flashcards */
+.flashcard-list {
+  display: flex;
+  flex-direction: column;
+  gap: .6rem;
+  margin-bottom: 1rem;
+}
+.flashcard-item {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: .85rem 1rem;
+  box-shadow: var(--shadow);
+}
+.flashcard-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: .35rem;
+}
+.flashcard-item-subject {
+  font-size: .72rem;
+  font-weight: 600;
+  color: var(--color-text-light);
+  background: var(--color-bg);
+  padding: .15rem .5rem;
+  border-radius: 999px;
+}
+.flashcard-item-diff {
+  font-size: .68rem;
+  font-weight: 700;
+  padding: .1rem .4rem;
+  border-radius: 4px;
+}
+.flashcard-diff-1 { background: #e6f4ec; color: #2d6a4f; }
+.flashcard-diff-2 { background: #fef9e7; color: #8a6d1b; }
+.flashcard-diff-3 { background: #fbeae5; color: #9a4b2b; }
+
+.flashcard-item-question {
+  font-size: .88rem;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: .25rem;
+  line-height: 1.4;
+}
+.flashcard-item-answer {
+  font-size: .82rem;
+  color: var(--color-text-light);
+  line-height: 1.4;
+  max-height: 3em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.flashcard-item-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: .4rem;
+}
+.flashcard-item-reviews {
+  font-size: .72rem;
+  color: var(--color-text-light);
+}
+.btn-delete-flashcard {
+  background: none;
+  border: none;
+  font-size: 1.1rem;
+  color: var(--color-text-light);
+  cursor: pointer;
+  padding: .1rem .3rem;
+  border-radius: 4px;
+  transition: color .15s;
+}
+.btn-delete-flashcard:hover {
+  color: var(--color-danger);
+}
+
+/* ========================================================================
+   MODAL SUGGESTION FLASHCARDS (étape 4)
+   ======================================================================== */
+
+.modal-box-large {
+  max-width: 500px;
+}
+.flashcard-suggestion-list {
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  max-height: 350px;
+  overflow-y: auto;
+  margin-bottom: .5rem;
+}
+.flashcard-suggestion-item {
+  display: flex;
+  gap: .6rem;
+  padding: .6rem .75rem;
+  background: var(--color-bg);
+  border-radius: 8px;
+  align-items: flex-start;
+}
+.flashcard-suggestion-check {
+  padding-top: .15rem;
+  flex-shrink: 0;
+}
+.flashcard-suggestion-check input {
+  accent-color: var(--color-primary);
+  width: 18px;
+  height: 18px;
+}
+.flashcard-suggestion-content {
+  flex: 1;
+  min-width: 0;
+}
+.flashcard-suggestion-q {
+  font-size: .85rem;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: .15rem;
+}
+.flashcard-suggestion-a {
+  font-size: .78rem;
+  color: var(--color-text-light);
+  line-height: 1.35;
+}
+
+/* ========================================================================
+   MODE RÉVISION FLASHCARD (étape 4)
+   ======================================================================== */
+
+.modal-box-review {
+  max-width: 440px;
+  padding: 1.25rem;
+}
+.review-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+.review-progress {
+  font-size: .82rem;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+/* Carte retournable (flip) */
+.flashcard-flip-container {
+  perspective: 800px;
+  margin-bottom: 1rem;
+  cursor: pointer;
+}
+.flashcard-flip-inner {
+  position: relative;
+  width: 100%;
+  min-height: 160px;
+  transition: transform .5s ease;
+  transform-style: preserve-3d;
+}
+.flashcard-flip-inner.flipped {
+  transform: rotateY(180deg);
+}
+.flashcard-flip-front,
+.flashcard-flip-back {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  border-radius: var(--radius);
+  text-align: center;
+  min-height: 160px;
+}
+.flashcard-flip-front {
+  background: var(--color-bg);
+  border: 2px solid var(--color-primary-light);
+}
+.flashcard-flip-back {
+  background: #e8f5ee;
+  border: 2px solid var(--color-accent);
+  transform: rotateY(180deg);
+}
+.flashcard-question-text {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text);
+  line-height: 1.45;
+}
+.flashcard-answer-text {
+  font-size: .92rem;
+  color: var(--color-text);
+  line-height: 1.45;
+}
+
+/* Bouton révéler */
+.btn-reveal {
+  width: 100%;
+  margin-bottom: .75rem;
+}
+
+/* Boutons Je savais / À revoir */
+.review-buttons {
+  display: flex;
+  gap: .5rem;
+}
+.btn-review-knew,
+.btn-review-retry {
+  flex: 1;
+  padding: .65rem;
+  font-family: var(--font);
+  font-size: .88rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background .2s, transform .1s;
+}
+.btn-review-knew:active,
+.btn-review-retry:active {
+  transform: scale(.97);
+}
+.btn-review-knew {
+  background: var(--color-done);
+  color: #fff;
+}
+.btn-review-knew:hover {
+  background: #4a8266;
+}
+.btn-review-retry {
+  background: var(--color-warning);
+  color: #fff;
+}
+.btn-review-retry:hover {
+  background: #b8922e;
+}
+
+.review-subject {
+  text-align: center;
+  font-size: .75rem;
+  color: var(--color-text-light);
+  margin-top: .75rem;
+}
+
 /* ---------- Responsive > 600px ---------- */
 @media (min-width: 600px) {
   main { padding: 1.5rem; }
   .timer-display { width: 260px; height: 260px; }
   .timer-digits { font-size: 3.2rem; }
   .modal-box { max-width: 460px; }
+  .modal-box-large { max-width: 540px; }
   .nav-tab { font-size: .9rem; padding: .7rem 1rem; }
   .stats-cards { grid-template-columns: 1fr 1fr 1fr; }
   .stats-cards .stat-card:last-child { grid-column: auto; }
   .heatmap-grid { min-width: auto; }
   .quality-star .star-svg { width: 42px; height: 42px; }
+  .onboarding-container { padding: 2rem; }
+  .flashcard-flip-front,
+  .flashcard-flip-back { min-height: 200px; }
 }
