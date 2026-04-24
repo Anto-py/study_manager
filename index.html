@@ -1,618 +1,543 @@
 <!DOCTYPE html>
+
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#4a7c8a">
-  <meta name="description" content="Organise ta journée d'étude avec un contrat quotidien, un timer de concentration et des flashcards à répétition espacée.">
-  <title>Study Protocol Manager</title>
-  <link rel="manifest" href="manifest.json">
-  <link rel="icon" href="icons/icon-192.png" type="image/png">
-  <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="style.css">
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<meta content="#4a7c8a" name="theme-color"/>
+<meta content="Organise ta journée d'étude avec un contrat quotidien, un timer de concentration et des flashcards à répétition espacée." name="description"/>
+<title>Study Protocol Manager</title>
+<link href="manifest.json" rel="manifest"/>
+<link href="icons/icon-192.png" rel="icon" type="image/png"/>
+<link href="icons/icon-192.png" rel="apple-touch-icon"/>
+<link href="style.css" rel="stylesheet"/>
 </head>
 <body>
-
-  <!-- ====== ÉCRAN ONBOARDING : SLIDES D'ACCUEIL ====== -->
-  <div id="welcomeScreen" class="onboarding-screen hidden">
-    <div class="onboarding-container welcome-slides">
-      <div id="welcomeSlides">
-        <!-- Slide 1 -->
-        <div class="welcome-slide" data-slide="0">
-          <div class="welcome-icon">&#128221;</div>
-          <h2 class="welcome-slide-title">Bienvenue dans Study Protocol Manager</h2>
-          <p class="welcome-slide-desc">Ton outil d'organisation d'étude basé sur la science.</p>
-        </div>
-        <!-- Slide 2 -->
-        <div class="welcome-slide hidden" data-slide="1">
-          <div class="welcome-icon">&#9201;</div>
-          <h2 class="welcome-slide-title">Crée ton contrat quotidien</h2>
-          <p class="welcome-slide-desc">Choisis 3 à 5 tâches et lance un timer de concentration pour chacune.</p>
-        </div>
-        <!-- Slide 3 -->
-        <div class="welcome-slide hidden" data-slide="2">
-          <div class="welcome-icon">&#127183;</div>
-          <h2 class="welcome-slide-title">Révise avec des flashcards</h2>
-          <p class="welcome-slide-desc">Les cartes sont créées automatiquement depuis tes résumés et utilisent la répétition espacée.</p>
-        </div>
-        <!-- Slide 4 -->
-        <div class="welcome-slide hidden" data-slide="3">
-          <div class="welcome-icon">&#128200;</div>
-          <h2 class="welcome-slide-title">Découvre tes meilleurs moments</h2>
-          <p class="welcome-slide-desc">Le dashboard analyse tes habitudes et détecte tes créneaux les plus efficaces.</p>
-        </div>
-      </div>
-
-      <div class="welcome-dots" id="welcomeDots">
-        <span class="welcome-dot active"></span>
-        <span class="welcome-dot"></span>
-        <span class="welcome-dot"></span>
-        <span class="welcome-dot"></span>
-      </div>
-
-      <div class="welcome-nav">
-        <button id="btnWelcomeNext" class="btn btn-primary btn-lock" type="button">Suivant</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ====== ÉCRAN QUESTIONNAIRE CHRONOTYPE ====== -->
-  <div id="onboardingScreen" class="onboarding-screen hidden">
-    <div class="onboarding-container">
-      <div class="onboarding-header">
-        <h1 class="onboarding-title">Es-tu plutôt du matin ou du soir ?</h1>
-        <p class="onboarding-subtitle">Réponds à 5 questions rapides pour découvrir ton profil chronobiologique et optimiser tes révisions.</p>
-      </div>
-
-      <div class="onboarding-progress">
-        <div class="onboarding-progress-bar" id="onboardingProgressBar" style="width:20%"></div>
-      </div>
-      <p class="onboarding-step-label" id="onboardingStepLabel">Question 1 / 5</p>
-
-      <div id="onboardingQuestions"></div>
-
-      <div class="onboarding-nav">
-        <button id="btnOnboardingPrev" class="btn btn-secondary btn-small" type="button" disabled>&larr; Précédent</button>
-        <button id="btnOnboardingNext" class="btn btn-primary" type="button" disabled>Suivant &rarr;</button>
-      </div>
-
-      <button id="btnOnboardingSkip" class="btn btn-link onboarding-skip" type="button">Passer et utiliser l'app directement</button>
-    </div>
-  </div>
-
-  <!-- ====== ÉCRAN RÉSULTAT CHRONOTYPE ====== -->
-  <div id="chronotypeResultScreen" class="onboarding-screen hidden">
-    <div class="onboarding-container chronotype-result">
-      <div class="chronotype-icon" id="chronotypeIcon"></div>
-      <h2 class="chronotype-result-title" id="chronotypeResultTitle">Ton profil : —</h2>
-      <p class="chronotype-result-desc" id="chronotypeResultDesc"></p>
-      <div class="chronotype-slots">
-        <h3>Tes créneaux optimaux pour travailler :</h3>
-        <div class="chronotype-slots-list" id="chronotypeSlotsList"></div>
-      </div>
-      <p class="chronotype-reference">Basé sur les recherches en chronobiologie (Carskadon et al.)</p>
-      <button id="btnStartApp" class="btn btn-primary btn-lock" type="button">Commencer à utiliser l'app</button>
-    </div>
-  </div>
-
-  <!-- ====== EN-TÊTE ====== -->
-  <header class="app-header" id="appHeader">
-    <h1 class="app-title">Study Protocol</h1>
-    <p class="app-date" id="currentDate"></p>
-  </header>
-
-  <!-- ====== NAVIGATION PAR ONGLETS (5 onglets) ====== -->
-  <nav class="app-nav" id="appNav">
-    <button class="nav-tab active" data-tab="main" type="button">Accueil</button>
-    <button class="nav-tab" data-tab="dashboard" type="button">Stats</button>
-    <button class="nav-tab" data-tab="flashcards" type="button">Cartes</button>
-    <button class="nav-tab" data-tab="history" type="button">Historique</button>
-    <button class="nav-tab" data-tab="settings" type="button">Param.</button>
-  </nav>
-
-  <main id="app">
-
-    <!-- ====== ONGLET ACCUEIL (contrat + timer) ====== -->
-    <div id="tabMain">
-
-      <!-- VUE 1 : CRÉATION DU CONTRAT -->
-      <section id="viewContract" class="view">
-        <h2 class="section-title">Ma mission du jour</h2>
-        <p class="section-hint">Choisis entre 3 et 5 tâches pour ta journée. Pas plus&nbsp;: mieux vaut finir peu que commencer beaucoup.</p>
-
-        <div id="suggestionCreneau" class="suggestion-creneau hidden">
-          <p id="suggestionCreneauText"></p>
-        </div>
-
-        <div id="badgeCreneauOptimal" class="badge-creneau hidden"></div>
-
-        <div id="taskList" class="task-list"></div>
-
-        <div class="task-actions">
-          <button id="btnAddTask" class="btn btn-secondary" type="button">+ Ajouter une tâche</button>
-        </div>
-
-        <details class="demo-hint">
-          <summary>Voir un exemple de contrat</summary>
-          <ul>
-            <li><strong>Résumé chapitre 4</strong> — Français — 25 min — Moyen</li>
-            <li><strong>Exercices équations</strong> — Maths — 50 min — Difficile</li>
-            <li><strong>Relire notes cours</strong> — Sciences — 25 min — Facile</li>
-          </ul>
-          <button id="btnLoadDemo" class="btn btn-link" type="button">Charger cet exemple</button>
-        </details>
-
-        <button id="btnLockContract" class="btn btn-primary btn-lock" type="button" disabled>
+<!-- ====== ÉCRAN ONBOARDING : SLIDES D'ACCUEIL ====== -->
+<div class="onboarding-screen hidden" id="welcomeScreen">
+<div class="onboarding-container welcome-slides">
+<div id="welcomeSlides">
+<!-- Slide 1 -->
+<div class="welcome-slide" data-slide="0">
+<div class="welcome-icon">📝</div>
+<h2 class="welcome-slide-title">Bienvenue dans Study Protocol Manager</h2>
+<p class="welcome-slide-desc">Ton outil d'organisation d'étude basé sur la science.</p>
+</div>
+<!-- Slide 2 -->
+<div class="welcome-slide hidden" data-slide="1">
+<div class="welcome-icon">⏱</div>
+<h2 class="welcome-slide-title">Crée ton contrat quotidien</h2>
+<p class="welcome-slide-desc">Choisis 3 à 5 tâches et lance un timer de concentration pour chacune.</p>
+</div>
+<!-- Slide 3 -->
+<div class="welcome-slide hidden" data-slide="2">
+<div class="welcome-icon">🃏</div>
+<h2 class="welcome-slide-title">Révise avec des flashcards</h2>
+<p class="welcome-slide-desc">Les cartes sont créées automatiquement depuis tes résumés et utilisent la répétition espacée.</p>
+</div>
+<!-- Slide 4 -->
+<div class="welcome-slide hidden" data-slide="3">
+<div class="welcome-icon">📈</div>
+<h2 class="welcome-slide-title">Découvre tes meilleurs moments</h2>
+<p class="welcome-slide-desc">Le dashboard analyse tes habitudes et détecte tes créneaux les plus efficaces.</p>
+</div>
+</div>
+<div class="welcome-dots" id="welcomeDots">
+<span class="welcome-dot active"></span>
+<span class="welcome-dot"></span>
+<span class="welcome-dot"></span>
+<span class="welcome-dot"></span>
+</div>
+<div class="welcome-nav">
+<button class="btn btn-primary btn-lock" id="btnWelcomeNext" type="button">Suivant</button>
+</div>
+</div>
+</div>
+<!-- ====== ÉCRAN QUESTIONNAIRE CHRONOTYPE ====== -->
+<div class="onboarding-screen hidden" id="onboardingScreen">
+<div class="onboarding-container">
+<div class="onboarding-header">
+<h1 class="onboarding-title">Es-tu plutôt du matin ou du soir ?</h1>
+<p class="onboarding-subtitle">Réponds à 5 questions rapides pour découvrir ton profil chronobiologique et optimiser tes révisions.</p>
+</div>
+<div class="onboarding-progress">
+<div class="onboarding-progress-bar" id="onboardingProgressBar" style="width:20%"></div>
+</div>
+<p class="onboarding-step-label" id="onboardingStepLabel">Question 1 / 5</p>
+<div id="onboardingQuestions"></div>
+<div class="onboarding-nav">
+<button class="btn btn-secondary btn-small" disabled="" id="btnOnboardingPrev" type="button">← Précédent</button>
+<button class="btn btn-primary" disabled="" id="btnOnboardingNext" type="button">Suivant →</button>
+</div>
+<button class="btn btn-link onboarding-skip" id="btnOnboardingSkip" type="button">Passer et utiliser l'app directement</button>
+</div>
+</div>
+<!-- ====== ÉCRAN RÉSULTAT CHRONOTYPE ====== -->
+<div class="onboarding-screen hidden" id="chronotypeResultScreen">
+<div class="onboarding-container chronotype-result">
+<div class="chronotype-icon" id="chronotypeIcon"></div>
+<h2 class="chronotype-result-title" id="chronotypeResultTitle">Ton profil : —</h2>
+<p class="chronotype-result-desc" id="chronotypeResultDesc"></p>
+<div class="chronotype-slots">
+<h3>Tes créneaux optimaux pour travailler :</h3>
+<div class="chronotype-slots-list" id="chronotypeSlotsList"></div>
+</div>
+<p class="chronotype-reference">Basé sur les recherches en chronobiologie (Carskadon et al.)</p>
+<button class="btn btn-primary btn-lock" id="btnStartApp" type="button">Commencer à utiliser l'app</button>
+</div>
+</div>
+<!-- ====== EN-TÊTE ====== -->
+<header class="app-header" id="appHeader">
+<h1 class="app-title">Study Protocol</h1>
+<p class="app-date" id="currentDate"></p>
+</header>
+<!-- ====== NAVIGATION PAR ONGLETS (5 onglets) ====== -->
+<nav class="app-nav" id="appNav">
+<button class="nav-tab active" data-tab="main" type="button">Accueil</button>
+<button class="nav-tab" data-tab="dashboard" type="button">Stats</button>
+<button class="nav-tab" data-tab="flashcards" type="button">Cartes</button>
+<button class="nav-tab" data-tab="history" type="button">Historique</button>
+<button class="nav-tab" data-tab="settings" type="button">Param.</button>
+</nav>
+<main id="app">
+<!-- ====== ONGLET ACCUEIL (contrat + timer) ====== -->
+<div id="tabMain">
+<!-- VUE 1 : CRÉATION DU CONTRAT -->
+<section class="view" id="viewContract">
+<h2 class="section-title">Ma mission du jour</h2>
+<p class="section-hint">Choisis entre 3 et 5 tâches pour ta journée. Pas plus : mieux vaut finir peu que commencer beaucoup.</p>
+<div class="suggestion-creneau hidden" id="suggestionCreneau">
+<p id="suggestionCreneauText"></p>
+</div>
+<div class="badge-creneau hidden" id="badgeCreneauOptimal"></div>
+<div class="task-list" id="taskList"></div>
+<div class="task-actions">
+<button class="btn btn-secondary" id="btnAddTask" type="button">+ Ajouter une tâche</button>
+</div>
+<details class="demo-hint">
+<summary>Voir un exemple de contrat</summary>
+<ul>
+<li><strong>Résumé chapitre 4</strong> — Français — 25 min — Moyen</li>
+<li><strong>Exercices équations</strong> — Maths — 50 min — Difficile</li>
+<li><strong>Relire notes cours</strong> — Sciences — 25 min — Facile</li>
+</ul>
+<button class="btn btn-link" id="btnLoadDemo" type="button">Charger cet exemple</button>
+</details>
+<button class="btn btn-primary btn-lock" disabled="" id="btnLockContract" type="button">
           Démarrer ma journée
         </button>
-      </section>
-
-      <!-- VUE 2 : CONTRAT VERROUILLÉ -->
-      <section id="viewLocked" class="view hidden">
-        <h2 class="section-title">Mon contrat du jour</h2>
-        <div class="progress-summary" id="progressSummary"></div>
-        <ul id="lockedTaskList" class="locked-list"></ul>
-        <button id="btnResetDay" class="btn btn-secondary btn-reset" type="button">Nouvelle journée</button>
-      </section>
-
-      <!-- VUE 3 : TIMER DE SESSION -->
-      <section id="viewTimer" class="view hidden">
-        <button id="btnBackToList" class="btn btn-link btn-back" type="button">&larr; Retour au contrat</button>
-        <div class="timer-task-name" id="timerTaskName"></div>
-        <div class="timer-subject" id="timerSubject"></div>
-        <div class="timer-display">
-          <svg class="timer-ring" viewBox="0 0 200 200">
-            <circle class="timer-ring-bg" cx="100" cy="100" r="90" />
-            <circle class="timer-ring-progress" id="timerRingProgress" cx="100" cy="100" r="90" />
-          </svg>
-          <span class="timer-digits" id="timerDigits">25:00</span>
-        </div>
-        <div class="timer-controls">
-          <button id="btnPause" class="btn btn-secondary" type="button">Pause</button>
-          <button id="btnFinish" class="btn btn-primary" type="button">Terminer</button>
-          <button id="btnAbandon" class="btn btn-danger" type="button">Abandonner</button>
-        </div>
-        <label class="sound-toggle">
-          <input type="checkbox" id="chkSound" checked>
+</section>
+<!-- VUE 2 : CONTRAT VERROUILLÉ -->
+<section class="view hidden" id="viewLocked">
+<h2 class="section-title">Mon contrat du jour</h2>
+<div class="progress-summary" id="progressSummary"></div>
+<ul class="locked-list" id="lockedTaskList"></ul>
+<button class="btn btn-secondary btn-reset" id="btnResetDay" type="button">Nouvelle journée</button>
+</section>
+<!-- VUE 3 : TIMER DE SESSION -->
+<section class="view hidden" id="viewTimer">
+<button class="btn btn-link btn-back" id="btnBackToList" type="button">← Retour au contrat</button>
+<div class="timer-task-name" id="timerTaskName"></div>
+<div class="timer-subject" id="timerSubject"></div>
+<div class="timer-display">
+<svg class="timer-ring" viewbox="0 0 200 200">
+<circle class="timer-ring-bg" cx="100" cy="100" r="90"></circle>
+<circle class="timer-ring-progress" cx="100" cy="100" id="timerRingProgress" r="90"></circle>
+</svg>
+<span class="timer-digits" id="timerDigits">25:00</span>
+</div>
+<div class="timer-controls">
+<button class="btn btn-secondary" id="btnPause" type="button">Pause</button>
+<button class="btn btn-primary" id="btnFinish" type="button">Terminer</button>
+<button class="btn btn-danger" id="btnAbandon" type="button">Abandonner</button>
+</div>
+<label class="sound-toggle">
+<input checked="" id="chkSound" type="checkbox"/>
           Son à la fin de la session
         </label>
-        <div id="breakSuggestion" class="break-suggestion hidden">
-          <p>Session terminée. Prends une pause de <strong id="breakDuration"></strong> minutes pour recharger.</p>
-          <button id="btnDismissBreak" class="btn btn-secondary" type="button">Compris</button>
-        </div>
-      </section>
-
-    </div>
-
-    <!-- ====== ONGLET STATISTIQUES (dashboard) ====== -->
-    <div id="tabDashboard" class="hidden">
-      <section class="view">
-        <h2 class="section-title">Mes statistiques</h2>
-        <p class="section-hint">Analyse de tes habitudes d'étude et détection de tes meilleures tranches horaires.</p>
-
-        <div class="chronotype-card" id="chronotypeCard" style="display:none">
-          <div class="chronotype-card-icon" id="chronotypeCardIcon"></div>
-          <div class="chronotype-card-info">
-            <div class="chronotype-card-label" id="chronotypeCardLabel">—</div>
-            <div class="chronotype-card-date" id="chronotypeCardDate">—</div>
-          </div>
-          <button class="btn btn-secondary btn-small" id="btnRefaireChronotype" type="button">Refaire le test</button>
-        </div>
-
-        <div class="stats-cards">
-          <div class="stat-card" id="statTempsFocalise">
-            <div class="stat-value">—</div>
-            <div class="stat-label">Temps focalisé ce mois</div>
-          </div>
-          <div class="stat-card" id="statSessionsAccomplies">
-            <div class="stat-value">—</div>
-            <div class="stat-label">Sessions accomplies</div>
-          </div>
-          <div class="stat-card" id="statMatieresTravaillees">
-            <div class="stat-label">Matières travaillées</div>
-          </div>
-        </div>
-
-        <div class="dashboard-section">
-          <div class="dashboard-section-header">
-            <h3 class="dashboard-section-title">Activité hebdomadaire</h3>
-            <button class="btn-export-png" id="btnExportHeatmap" type="button" title="Exporter en PNG">PNG</button>
-          </div>
-          <div class="heatmap-nav">
-            <button class="btn btn-secondary btn-small" id="btnWeekPrev" type="button">&larr; Sem. préc.</button>
-            <span class="heatmap-week-label" id="heatmapWeekLabel">Semaine actuelle</span>
-            <button class="btn btn-secondary btn-small" id="btnWeekNext" type="button">Sem. suiv. &rarr;</button>
-          </div>
-          <div id="heatmapContainer" class="heatmap-container"></div>
-          <div class="heatmap-legend">
-            <span class="heatmap-legend-label">Moins</span>
-            <span class="heatmap-legend-cell" style="background:#eef2f5"></span>
-            <span class="heatmap-legend-cell" style="background:#c6e6d4"></span>
-            <span class="heatmap-legend-cell" style="background:#7cc9a0"></span>
-            <span class="heatmap-legend-cell" style="background:#3a9d6e"></span>
-            <span class="heatmap-legend-label">Plus</span>
-          </div>
-        </div>
-
-        <div class="dashboard-section">
-          <div class="dashboard-section-header">
-            <h3 class="dashboard-section-title">Qualité perçue par tranche horaire</h3>
-            <button class="btn-export-png" id="btnExportQualite" type="button" title="Exporter en PNG">PNG</button>
-          </div>
-          <p class="dashboard-section-hint">Corrélation entre l'heure et ta concentration (2 dernières semaines)</p>
-          <div class="quality-chart-container">
-            <canvas id="qualityCanvas"></canvas>
-          </div>
-        </div>
-
-        <div class="dashboard-section">
-          <h3 class="dashboard-section-title">Analyse de tes habitudes</h3>
-          <div id="insightsContainer"></div>
-        </div>
-      </section>
-    </div>
-
-    <!-- ====== ONGLET FLASHCARDS ====== -->
-    <div id="tabFlashcards" class="hidden">
-      <section class="view">
-        <h2 class="section-title">Mes cartes de révision</h2>
-
-        <div class="flashcard-stats" id="flashcardStats"></div>
-
-        <!-- Compteur de cartes dues -->
-        <div class="flashcard-due-banner" id="flashcardDueBanner" style="display:none">
-          <span id="flashcardDueCount">0 cartes à réviser aujourd'hui</span>
-        </div>
-
-        <div class="flashcard-filter">
-          <label for="flashcardFilterSubject">Filtrer par matière :</label>
-          <select id="flashcardFilterSubject" class="flashcard-filter-select">
-            <option value="">Toutes les matières</option>
-          </select>
-        </div>
-
-        <div class="flashcard-actions">
-          <button id="btnStartReview" class="btn btn-primary" type="button" disabled>Réviser (dues)</button>
-          <button id="btnReviewAll" class="btn btn-secondary" type="button" disabled>Toutes les cartes</button>
-        </div>
-        <div class="flashcard-actions" style="margin-top:-.5rem">
-          <button id="btnCreateManualFlashcard" class="btn btn-secondary" type="button">Créer une carte</button>
-        </div>
-
-        <div id="flashcardList" class="flashcard-list"></div>
-
-        <div id="flashcardEmpty" class="empty-state hidden">
-          <div class="empty-state-icon">&#127183;</div>
-          <p class="empty-state-text">Crée tes premières cartes après avoir résumé une session, ou manuellement.</p>
-        </div>
-      </section>
-    </div>
-
-    <!-- ====== ONGLET HISTORIQUE ====== -->
-    <div id="tabHistory" class="hidden">
-      <section class="view">
-        <h2 class="section-title">Historique des sessions</h2>
-        <p class="section-hint">Tes sessions de travail passées.</p>
-
-        <div id="historyList" class="history-list"></div>
-
-        <button id="btnLoadMore" class="btn btn-secondary btn-load-more hidden" type="button">
+<div class="break-suggestion hidden" id="breakSuggestion">
+<p>Session terminée. Prends une pause de <strong id="breakDuration"></strong> minutes pour recharger.</p>
+<button class="btn btn-secondary" id="btnDismissBreak" type="button">Compris</button>
+</div>
+</section>
+</div>
+<!-- ====== ONGLET STATISTIQUES (dashboard) ====== -->
+<div class="hidden" id="tabDashboard">
+<section class="view">
+<h2 class="section-title">Mes statistiques</h2>
+<p class="section-hint">Analyse de tes habitudes d'étude et détection de tes meilleures tranches horaires.</p>
+<div class="chronotype-card" id="chronotypeCard" style="display:none">
+<div class="chronotype-card-icon" id="chronotypeCardIcon"></div>
+<div class="chronotype-card-info">
+<div class="chronotype-card-label" id="chronotypeCardLabel">—</div>
+<div class="chronotype-card-date" id="chronotypeCardDate">—</div>
+</div>
+<button class="btn btn-secondary btn-small" id="btnRefaireChronotype" type="button">Refaire le test</button>
+</div>
+<div class="stats-cards">
+<div class="stat-card" id="statTempsFocalise">
+<div class="stat-value">—</div>
+<div class="stat-label">Temps focalisé ce mois</div>
+</div>
+<div class="stat-card" id="statSessionsAccomplies">
+<div class="stat-value">—</div>
+<div class="stat-label">Sessions accomplies</div>
+</div>
+<div class="stat-card" id="statMatieresTravaillees">
+<div class="stat-label">Matières travaillées</div>
+</div>
+</div>
+<div class="dashboard-section">
+<div class="dashboard-section-header">
+<h3 class="dashboard-section-title">Activité hebdomadaire</h3>
+<button class="btn-export-png" id="btnExportHeatmap" title="Exporter en PNG" type="button">PNG</button>
+</div>
+<div class="heatmap-nav">
+<button class="btn btn-secondary btn-small" id="btnWeekPrev" type="button">← Sem. préc.</button>
+<span class="heatmap-week-label" id="heatmapWeekLabel">Semaine actuelle</span>
+<button class="btn btn-secondary btn-small" id="btnWeekNext" type="button">Sem. suiv. →</button>
+</div>
+<div class="heatmap-container" id="heatmapContainer"></div>
+<div class="heatmap-legend">
+<span class="heatmap-legend-label">Moins</span>
+<span class="heatmap-legend-cell" style="background:#eef2f5"></span>
+<span class="heatmap-legend-cell" style="background:#c6e6d4"></span>
+<span class="heatmap-legend-cell" style="background:#7cc9a0"></span>
+<span class="heatmap-legend-cell" style="background:#3a9d6e"></span>
+<span class="heatmap-legend-label">Plus</span>
+</div>
+</div>
+<div class="dashboard-section">
+<div class="dashboard-section-header">
+<h3 class="dashboard-section-title">Qualité perçue par tranche horaire</h3>
+<button class="btn-export-png" id="btnExportQualite" title="Exporter en PNG" type="button">PNG</button>
+</div>
+<p class="dashboard-section-hint">Corrélation entre l'heure et ta concentration (2 dernières semaines)</p>
+<div class="quality-chart-container">
+<canvas id="qualityCanvas"></canvas>
+</div>
+</div>
+<div class="dashboard-section">
+<h3 class="dashboard-section-title">Analyse de tes habitudes</h3>
+<div id="insightsContainer"></div>
+</div>
+</section>
+</div>
+<!-- ====== ONGLET FLASHCARDS ====== -->
+<div class="hidden" id="tabFlashcards">
+<section class="view">
+<h2 class="section-title">Mes cartes de révision</h2>
+<div class="flashcard-stats" id="flashcardStats"></div>
+<!-- Compteur de cartes dues -->
+<div class="flashcard-due-banner" id="flashcardDueBanner" style="display:none">
+<span id="flashcardDueCount">0 cartes à réviser aujourd'hui</span>
+</div>
+<div class="flashcard-filter">
+<label for="flashcardFilterSubject">Filtrer par matière :</label>
+<select class="flashcard-filter-select" id="flashcardFilterSubject">
+<option value="">Toutes les matières</option>
+</select>
+</div>
+<div class="flashcard-actions">
+<button class="btn btn-primary" disabled="" id="btnStartReview" type="button">Réviser (dues)</button>
+<button class="btn btn-secondary" disabled="" id="btnReviewAll" type="button">Toutes les cartes</button>
+</div>
+<div class="flashcard-actions" style="margin-top:-.5rem">
+<button class="btn btn-secondary" id="btnCreateManualFlashcard" type="button">Créer une carte</button>
+</div>
+<div class="flashcard-list" id="flashcardList"></div>
+<div class="empty-state hidden" id="flashcardEmpty">
+<div class="empty-state-icon">🃏</div>
+<p class="empty-state-text">Crée tes premières cartes après avoir résumé une session, ou manuellement.</p>
+</div>
+</section>
+</div>
+<!-- ====== ONGLET HISTORIQUE ====== -->
+<div class="hidden" id="tabHistory">
+<section class="view">
+<h2 class="section-title">Historique des sessions</h2>
+<p class="section-hint">Tes sessions de travail passées.</p>
+<div class="history-list" id="historyList"></div>
+<button class="btn btn-secondary btn-load-more hidden" id="btnLoadMore" type="button">
           Charger plus de sessions
         </button>
-
-        <div id="historyEmpty" class="empty-state hidden">
-          <div class="empty-state-icon">&#128214;</div>
-          <p class="empty-state-text">Aucune session enregistrée pour le moment. Commence ta première session pour voir ton historique.</p>
-        </div>
-
-        <button id="btnExportCSV" class="btn btn-secondary btn-export" type="button">
+<div class="empty-state hidden" id="historyEmpty">
+<div class="empty-state-icon">📖</div>
+<p class="empty-state-text">Aucune session enregistrée pour le moment. Commence ta première session pour voir ton historique.</p>
+</div>
+<button class="btn btn-secondary btn-export" id="btnExportCSV" type="button">
           Exporter en CSV
         </button>
-      </section>
-    </div>
-
-    <!-- ====== ONGLET PARAMÈTRES ====== -->
-    <div id="tabSettings" class="hidden">
-      <section class="view">
-        <h2 class="section-title">Paramètres</h2>
-
-        <!-- Thème -->
-        <div class="settings-section">
-          <h3 class="settings-section-title">Apparence</h3>
-          <div class="settings-theme-group">
-            <label class="settings-theme-option">
-              <input type="radio" name="theme" value="light" checked> Clair
+</section>
+</div>
+<!-- ====== ONGLET PARAMÈTRES ====== -->
+<div class="hidden" id="tabSettings">
+<section class="view">
+<h2 class="section-title">Paramètres</h2>
+<!-- Thème -->
+<div class="settings-section">
+<h3 class="settings-section-title">Apparence</h3>
+<div class="settings-theme-group">
+<label class="settings-theme-option">
+<input checked="" name="theme" type="radio" value="light"/> Clair
             </label>
-            <label class="settings-theme-option">
-              <input type="radio" name="theme" value="dark"> Sombre
+<label class="settings-theme-option">
+<input name="theme" type="radio" value="dark"/> Sombre
             </label>
-            <label class="settings-theme-option">
-              <input type="radio" name="theme" value="auto"> Auto (système)
+<label class="settings-theme-option">
+<input name="theme" type="radio" value="auto"/> Auto (système)
             </label>
-          </div>
-        </div>
-
-        <!-- Chronotype -->
-        <div class="settings-section">
-          <h3 class="settings-section-title">Profil chronobiologique</h3>
-          <div id="settingsChronotypeInfo" class="settings-info-text">Aucun profil détecté.</div>
-          <button id="btnSettingsChronotype" class="btn btn-secondary btn-small" type="button">Passer le test chronotype</button>
-        </div>
-
-        <!-- Mes données (Export/Import) -->
-        <div class="settings-section">
-          <h3 class="settings-section-title">Mes données</h3>
-
-          <div class="gdpr-stats" id="gdprStats">
-            <div class="gdpr-stat-row">
-              <span class="gdpr-stat-label">Nombre total de sessions</span>
-              <span class="gdpr-stat-value" id="gdprTotalSessions">—</span>
-            </div>
-            <div class="gdpr-stat-row">
-              <span class="gdpr-stat-label">Flashcards</span>
-              <span class="gdpr-stat-value" id="gdprTotalFlashcards">—</span>
-            </div>
-            <div class="gdpr-stat-row">
-              <span class="gdpr-stat-label">Période couverte</span>
-              <span class="gdpr-stat-value" id="gdprPeriode">—</span>
-            </div>
-            <div class="gdpr-stat-row">
-              <span class="gdpr-stat-label">Espace utilisé</span>
-              <span class="gdpr-stat-value" id="gdprTaille">—</span>
-            </div>
-          </div>
-
-          <div class="settings-export-buttons">
-            <button id="btnExportCSVSettings" class="btn btn-secondary" type="button">Export CSV Sessions</button>
-            <button id="btnExportJSON" class="btn btn-secondary" type="button">Export JSON Complet</button>
-            <label class="btn btn-secondary btn-import-label" for="importJSONInput">
+</div>
+</div>
+<!-- Chronotype -->
+<div class="settings-section">
+<h3 class="settings-section-title">Profil chronobiologique</h3>
+<div class="settings-info-text" id="settingsChronotypeInfo">Aucun profil détecté.</div>
+<button class="btn btn-secondary btn-small" id="btnSettingsChronotype" type="button">Passer le test chronotype</button>
+</div>
+<!-- Mes données (Export/Import) -->
+<div class="settings-section">
+<h3 class="settings-section-title">Mes données</h3>
+<div class="gdpr-stats" id="gdprStats">
+<div class="gdpr-stat-row">
+<span class="gdpr-stat-label">Nombre total de sessions</span>
+<span class="gdpr-stat-value" id="gdprTotalSessions">—</span>
+</div>
+<div class="gdpr-stat-row">
+<span class="gdpr-stat-label">Flashcards</span>
+<span class="gdpr-stat-value" id="gdprTotalFlashcards">—</span>
+</div>
+<div class="gdpr-stat-row">
+<span class="gdpr-stat-label">Période couverte</span>
+<span class="gdpr-stat-value" id="gdprPeriode">—</span>
+</div>
+<div class="gdpr-stat-row">
+<span class="gdpr-stat-label">Espace utilisé</span>
+<span class="gdpr-stat-value" id="gdprTaille">—</span>
+</div>
+</div>
+<div class="settings-export-buttons">
+<button class="btn btn-secondary" id="btnExportCSVSettings" type="button">Export CSV Sessions</button>
+<button class="btn btn-secondary" id="btnExportJSON" type="button">Export JSON Complet</button>
+<label class="btn btn-secondary btn-import-label" for="importJSONInput">
               Importer une sauvegarde
             </label>
-            <input type="file" id="importJSONInput" accept=".json" class="hidden">
-          </div>
-        </div>
-
-        <!-- Aide / FAQ -->
-        <div class="settings-section">
-          <h3 class="settings-section-title">Aide</h3>
-
-          <details class="faq-item">
-            <summary>Comment fonctionne le chronotype ?</summary>
-            <p>Le questionnaire évalue ton rythme circadien naturel à travers 5 questions basées sur la recherche de Carskadon et al. Il détermine si tu es plutôt matinal, intermédiaire ou vespéral, et te suggère les meilleurs créneaux pour étudier.</p>
-          </details>
-
-          <details class="faq-item">
-            <summary>Pourquoi 3-5 tâches maximum ?</summary>
-            <p>Selon les travaux de Zimmerman sur l'autorégulation, limiter le nombre de tâches améliore la complétion et réduit la surcharge cognitive. Mieux vaut finir 3 tâches que d'en commencer 10.</p>
-          </details>
-
-          <details class="faq-item">
-            <summary>Que faire si j'oublie de remplir un résumé ?</summary>
-            <p>Pas de souci ! Le résumé est optionnel. Cependant, la recherche de Dunlosky montre que la récupération active (écrire ce qu'on retient) est l'une des techniques d'étude les plus efficaces. Essaie quand tu peux.</p>
-          </details>
-
-          <details class="faq-item">
-            <summary>Comment fonctionne la répétition espacée ?</summary>
-            <p>L'algorithme SM-2 ajuste l'intervalle entre les révisions selon ta réponse : si tu connais bien une carte, l'intervalle augmente. Si tu hésites, on la revoit plus tôt. C'est la méthode utilisée par Anki et SuperMemo.</p>
-          </details>
-
-          <details class="faq-item">
-            <summary>Comment exporter mes données ?</summary>
-            <p>Va dans Paramètres > Mes données. Tu peux exporter en CSV (pour Excel) ou en JSON (sauvegarde complète). L'import JSON permet de restaurer tes données sur un autre appareil.</p>
-          </details>
-
-          <p class="settings-references">
+<input accept=".json" class="hidden" id="importJSONInput" type="file"/>
+</div>
+</div>
+<!-- Aide / FAQ -->
+<div class="settings-section">
+<h3 class="settings-section-title">Aide</h3>
+<details class="faq-item">
+<summary>Comment fonctionne le chronotype ?</summary>
+<p>Le questionnaire évalue ton rythme circadien naturel à travers 5 questions basées sur la recherche de Carskadon et al. Il détermine si tu es plutôt matinal, intermédiaire ou vespéral, et te suggère les meilleurs créneaux pour étudier.</p>
+</details>
+<details class="faq-item">
+<summary>Pourquoi 3-5 tâches maximum ?</summary>
+<p>Selon les travaux de Zimmerman sur l'autorégulation, limiter le nombre de tâches améliore la complétion et réduit la surcharge cognitive. Mieux vaut finir 3 tâches que d'en commencer 10.</p>
+</details>
+<details class="faq-item">
+<summary>Que faire si j'oublie de remplir un résumé ?</summary>
+<p>Pas de souci ! Le résumé est optionnel. Cependant, la recherche de Dunlosky montre que la récupération active (écrire ce qu'on retient) est l'une des techniques d'étude les plus efficaces. Essaie quand tu peux.</p>
+</details>
+<details class="faq-item">
+<summary>Comment fonctionne la répétition espacée ?</summary>
+<p>L'algorithme SM-2 ajuste l'intervalle entre les révisions selon ta réponse : si tu connais bien une carte, l'intervalle augmente. Si tu hésites, on la revoit plus tôt. C'est la méthode utilisée par Anki et SuperMemo.</p>
+</details>
+<details class="faq-item">
+<summary>Comment exporter mes données ?</summary>
+<p>Va dans Paramètres &gt; Mes données. Tu peux exporter en CSV (pour Excel) ou en JSON (sauvegarde complète). L'import JSON permet de restaurer tes données sur un autre appareil.</p>
+</details>
+<p class="settings-references">
             Références scientifiques : Zimmerman (2002), Dunlosky et al. (2013), Carskadon et al. (1998)
           </p>
-        </div>
-
-        <!-- À propos -->
-        <div class="settings-section">
-          <h3 class="settings-section-title">À propos</h3>
-          <p class="settings-about-text">
-            Study Protocol Manager v1.0<br>
-            Application pédagogique développée dans le cadre de la formation FSE Bruxelles.<br>
+</div>
+<!-- À propos -->
+<div class="settings-section">
+<h3 class="settings-section-title">À propos</h3>
+<p class="settings-about-text">
+            Study Protocol Manager v1.0<br/>
+            Application pédagogique développée dans le cadre de la formation FSE Bruxelles.<br/>
             Outil d'organisation d'étude basé sur les principes de l'autorégulation, la chronobiologie et la récupération active.
           </p>
-          <p class="settings-about-links">
-            <a href="mailto:feedback@studyprotocol.app" class="btn btn-link">Donner un retour</a>
-          </p>
-        </div>
-
-        <!-- Zone de danger -->
-        <div class="danger-zone">
-          <h3 class="danger-zone-title">Zone de danger</h3>
-          <p class="danger-zone-desc">Supprime définitivement toutes tes données : sessions, contrats, flashcards et profil chronotype.</p>
-          <button id="btnResetApp" class="btn btn-danger btn-reset-app" type="button">
+<p class="settings-about-links">
+<a class="btn btn-link" href="mailto:feedback@studyprotocol.app">Donner un retour</a>
+</p>
+</div>
+<!-- Zone de danger -->
+<div class="danger-zone">
+<h3 class="danger-zone-title">Zone de danger</h3>
+<p class="danger-zone-desc">Supprime définitivement toutes tes données : sessions, contrats, flashcards et profil chronotype.</p>
+<button class="btn btn-danger btn-reset-app" id="btnResetApp" type="button">
             Supprimer toutes mes données
           </button>
+</div>
+</section>
+</div>
+<!-- ====== MODALS ====== -->
+<!-- Modal récupération active -->
+<div class="modal-overlay hidden" id="recallModal">
+<div class="modal-box">
+<h3 class="modal-title">Qu'as-tu retenu ?</h3>
+<p class="modal-hint">Pour mieux mémoriser, résume en quelques phrases ce que tu viens d'étudier.</p>
+<textarea class="recall-textarea" id="recallTextarea" placeholder="Écris ici ce que tu as retenu de cette session... (minimum 50 caractères)" rows="5"></textarea>
+<div class="recall-counter">
+<span id="recallCharCount">0</span> / 50 caractères minimum
         </div>
-
-      </section>
-    </div>
-
-    <!-- ====== MODALS ====== -->
-
-    <!-- Modal récupération active -->
-    <div id="recallModal" class="modal-overlay hidden">
-      <div class="modal-box">
-        <h3 class="modal-title">Qu'as-tu retenu ?</h3>
-        <p class="modal-hint">Pour mieux mémoriser, résume en quelques phrases ce que tu viens d'étudier.</p>
-        <textarea id="recallTextarea" class="recall-textarea" placeholder="Écris ici ce que tu as retenu de cette session... (minimum 50 caractères)" rows="5"></textarea>
-        <div class="recall-counter">
-          <span id="recallCharCount">0</span> / 50 caractères minimum
-        </div>
-        <div class="modal-actions">
-          <button id="btnRecallSave" class="btn btn-primary" type="button" disabled>Enregistrer mon résumé</button>
-          <button id="btnRecallSkip" class="btn btn-link" type="button">Passer pour cette fois</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Modal évaluation qualité -->
-    <div id="qualityModal" class="modal-overlay hidden">
-      <div class="modal-box modal-box-compact">
-        <h3 class="modal-title">Comment s'est passée ta concentration ?</h3>
-        <p class="modal-hint">Évalue rapidement ta qualité de concentration pour cette session.</p>
-        <div class="quality-stars" id="qualityStars">
-          <button class="quality-star" data-rating="1" type="button" title="Très difficile de me concentrer">
-            <svg viewBox="0 0 24 24" class="star-svg"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-          </button>
-          <button class="quality-star" data-rating="2" type="button" title="Difficile">
-            <svg viewBox="0 0 24 24" class="star-svg"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-          </button>
-          <button class="quality-star" data-rating="3" type="button" title="Concentration moyenne">
-            <svg viewBox="0 0 24 24" class="star-svg"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-          </button>
-          <button class="quality-star" data-rating="4" type="button" title="Bonne concentration">
-            <svg viewBox="0 0 24 24" class="star-svg"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-          </button>
-          <button class="quality-star" data-rating="5" type="button" title="Excellente concentration">
-            <svg viewBox="0 0 24 24" class="star-svg"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-          </button>
-        </div>
-        <div class="quality-labels">
-          <span>Très difficile</span>
-          <span>Moyenne</span>
-          <span>Excellente</span>
-        </div>
-        <p class="quality-selected-label" id="qualitySelectedLabel">&nbsp;</p>
-        <div class="modal-actions">
-          <button id="btnQualitySave" class="btn btn-primary" type="button" disabled>Valider</button>
-          <button id="btnQualitySkip" class="btn btn-link" type="button">Passer</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Modal détail résumé -->
-    <div id="summaryDetailModal" class="modal-overlay hidden">
-      <div class="modal-box">
-        <h3 class="modal-title" id="summaryDetailTitle">Résumé de session</h3>
-        <p class="summary-detail-text" id="summaryDetailText"></p>
-        <div class="modal-actions">
-          <button id="btnCloseSummaryDetail" class="btn btn-secondary" type="button">Fermer</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Modal suggestion flashcards -->
-    <div id="flashcardSuggestionModal" class="modal-overlay hidden">
-      <div class="modal-box modal-box-large">
-        <h3 class="modal-title">Cartes de révision détectées</h3>
-        <p class="modal-hint" id="flashcardSuggestionHint">J'ai détecté des concepts clés dans ton résumé.</p>
-        <div id="flashcardSuggestionList" class="flashcard-suggestion-list"></div>
-        <div class="modal-actions">
-          <button id="btnFlashcardSuggestionSave" class="btn btn-primary" type="button">Créer les cartes sélectionnées</button>
-          <button id="btnFlashcardSuggestionSkip" class="btn btn-link" type="button">Plus tard</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Modal création manuelle flashcard -->
-    <div id="flashcardManualModal" class="modal-overlay hidden">
-      <div class="modal-box">
-        <h3 class="modal-title">Créer une carte de révision</h3>
-        <div class="field">
-          <label for="manualFlashcardQuestion">Question</label>
-          <input type="text" id="manualFlashcardQuestion" placeholder="Ex : Qu'est-ce que la photosynthèse ?">
-        </div>
-        <div class="field">
-          <label for="manualFlashcardAnswer">Réponse</label>
-          <textarea id="manualFlashcardAnswer" class="recall-textarea" rows="3" placeholder="Ex : La photosynthèse est le processus..."></textarea>
-        </div>
-        <div class="field">
-          <label for="manualFlashcardSubject">Matière</label>
-          <input type="text" id="manualFlashcardSubject" placeholder="Ex : Sciences (optionnel)">
-        </div>
-        <div class="modal-actions">
-          <button id="btnManualFlashcardSave" class="btn btn-primary" type="button">Créer la carte</button>
-          <button id="btnManualFlashcardCancel" class="btn btn-link" type="button">Annuler</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Modal révision flashcard (SM-2) -->
-    <div id="flashcardReviewModal" class="modal-overlay hidden">
-      <div class="modal-box modal-box-review">
-        <div class="review-header">
-          <span class="review-progress" id="reviewProgress">1 / 10</span>
-          <button id="btnCloseReview" class="btn btn-link" type="button">Fermer</button>
-        </div>
-
-        <div class="flashcard-flip-container" id="flashcardFlipContainer">
-          <div class="flashcard-flip-inner" id="flashcardFlipInner">
-            <div class="flashcard-flip-front">
-              <p class="flashcard-question-text" id="reviewQuestionText"></p>
-            </div>
-            <div class="flashcard-flip-back">
-              <p class="flashcard-answer-text" id="reviewAnswerText"></p>
-            </div>
-          </div>
-        </div>
-
-        <button id="btnRevealAnswer" class="btn btn-primary btn-reveal" type="button">Révéler la réponse</button>
-
-        <!-- Boutons SM-2 : Difficile / Moyen / Facile -->
-        <div id="reviewButtons" class="review-buttons hidden">
-          <button id="btnReviewHard" class="btn btn-review-hard" type="button">Difficile</button>
-          <button id="btnReviewMedium" class="btn btn-review-medium" type="button">Moyen</button>
-          <button id="btnReviewEasy" class="btn btn-review-easy" type="button">Facile</button>
-        </div>
-
-        <div class="review-subject" id="reviewSubject"></div>
-      </div>
-    </div>
-
-    <!-- Modal import confirmation -->
-    <div id="importConfirmModal" class="modal-overlay hidden">
-      <div class="modal-box modal-box-compact">
-        <h3 class="modal-title">Importer une sauvegarde</h3>
-        <p class="modal-hint">Cette action ajoutera les données importées à tes données actuelles. Souhaites-tu écraser les données existantes d'abord ?</p>
-        <div class="modal-actions">
-          <button id="btnImportMerge" class="btn btn-primary" type="button">Fusionner (ajouter)</button>
-          <button id="btnImportReplace" class="btn btn-danger" type="button">Écraser et remplacer</button>
-          <button id="btnImportCancel" class="btn btn-link" type="button">Annuler</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Dialogue de confirmation -->
-    <div id="confirmDialog" class="dialog-overlay hidden">
-      <div class="dialog-box">
-        <p id="confirmMessage">Es-tu sûr·e ?</p>
-        <div class="dialog-actions">
-          <button id="btnConfirmYes" class="btn btn-danger" type="button">Oui</button>
-          <button id="btnConfirmNo" class="btn btn-secondary" type="button">Non</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Tooltip contextuel -->
-    <div id="contextualTooltip" class="contextual-tooltip hidden">
-      <p id="contextualTooltipText"></p>
-      <button id="btnTooltipDismiss" class="btn btn-link btn-small" type="button">Compris</button>
-    </div>
-
-    <!-- Toast -->
-    <div id="toast" class="toast hidden" aria-live="polite"><div class="ab-attribution" style="text-align:center;margin-top:2rem;padding-top:1rem;border-top:1px solid rgba(128,128,128,0.25);font-size:0.8rem;opacity:0.65;">
-  <a href="https://www.linkedin.com/in/antonin-bareau/" target="_blank" rel="noopener" style="font-weight:bold;color:inherit;text-decoration:none;">Antonin Bareau</a>
-  &nbsp;&mdash;&nbsp;
-  <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;">Licence CC BY-SA 4.0</a>
+<div class="modal-actions">
+<button class="btn btn-primary" disabled="" id="btnRecallSave" type="button">Enregistrer mon résumé</button>
+<button class="btn btn-link" id="btnRecallSkip" type="button">Passer pour cette fois</button>
 </div>
 </div>
-
-  </main>
-
-  <!-- Footer -->
-  <footer class="app-footer" id="appFooter">
-    <span>Study Protocol Manager v1.0</span>
-  </footer>
-
-  <!-- Scripts -->
-  <script src="db.js"></script>
-  <script src="dashboard.js"></script>
-  <script src="export.js"></script>
-  <script src="app.js"></script>
-
-</body>
+</div>
+<!-- Modal évaluation qualité -->
+<div class="modal-overlay hidden" id="qualityModal">
+<div class="modal-box modal-box-compact">
+<h3 class="modal-title">Comment s'est passée ta concentration ?</h3>
+<p class="modal-hint">Évalue rapidement ta qualité de concentration pour cette session.</p>
+<div class="quality-stars" id="qualityStars">
+<button class="quality-star" data-rating="1" title="Très difficile de me concentrer" type="button">
+<svg class="star-svg" viewbox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path></svg>
+</button>
+<button class="quality-star" data-rating="2" title="Difficile" type="button">
+<svg class="star-svg" viewbox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path></svg>
+</button>
+<button class="quality-star" data-rating="3" title="Concentration moyenne" type="button">
+<svg class="star-svg" viewbox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path></svg>
+</button>
+<button class="quality-star" data-rating="4" title="Bonne concentration" type="button">
+<svg class="star-svg" viewbox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path></svg>
+</button>
+<button class="quality-star" data-rating="5" title="Excellente concentration" type="button">
+<svg class="star-svg" viewbox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path></svg>
+</button>
+</div>
+<div class="quality-labels">
+<span>Très difficile</span>
+<span>Moyenne</span>
+<span>Excellente</span>
+</div>
+<p class="quality-selected-label" id="qualitySelectedLabel"> </p>
+<div class="modal-actions">
+<button class="btn btn-primary" disabled="" id="btnQualitySave" type="button">Valider</button>
+<button class="btn btn-link" id="btnQualitySkip" type="button">Passer</button>
+</div>
+</div>
+</div>
+<!-- Modal détail résumé -->
+<div class="modal-overlay hidden" id="summaryDetailModal">
+<div class="modal-box">
+<h3 class="modal-title" id="summaryDetailTitle">Résumé de session</h3>
+<p class="summary-detail-text" id="summaryDetailText"></p>
+<div class="modal-actions">
+<button class="btn btn-secondary" id="btnCloseSummaryDetail" type="button">Fermer</button>
+</div>
+</div>
+</div>
+<!-- Modal suggestion flashcards -->
+<div class="modal-overlay hidden" id="flashcardSuggestionModal">
+<div class="modal-box modal-box-large">
+<h3 class="modal-title">Cartes de révision détectées</h3>
+<p class="modal-hint" id="flashcardSuggestionHint">J'ai détecté des concepts clés dans ton résumé.</p>
+<div class="flashcard-suggestion-list" id="flashcardSuggestionList"></div>
+<div class="modal-actions">
+<button class="btn btn-primary" id="btnFlashcardSuggestionSave" type="button">Créer les cartes sélectionnées</button>
+<button class="btn btn-link" id="btnFlashcardSuggestionSkip" type="button">Plus tard</button>
+</div>
+</div>
+</div>
+<!-- Modal création manuelle flashcard -->
+<div class="modal-overlay hidden" id="flashcardManualModal">
+<div class="modal-box">
+<h3 class="modal-title">Créer une carte de révision</h3>
+<div class="field">
+<label for="manualFlashcardQuestion">Question</label>
+<input id="manualFlashcardQuestion" placeholder="Ex : Qu'est-ce que la photosynthèse ?" type="text"/>
+</div>
+<div class="field">
+<label for="manualFlashcardAnswer">Réponse</label>
+<textarea class="recall-textarea" id="manualFlashcardAnswer" placeholder="Ex : La photosynthèse est le processus..." rows="3"></textarea>
+</div>
+<div class="field">
+<label for="manualFlashcardSubject">Matière</label>
+<input id="manualFlashcardSubject" placeholder="Ex : Sciences (optionnel)" type="text"/>
+</div>
+<div class="modal-actions">
+<button class="btn btn-primary" id="btnManualFlashcardSave" type="button">Créer la carte</button>
+<button class="btn btn-link" id="btnManualFlashcardCancel" type="button">Annuler</button>
+</div>
+</div>
+</div>
+<!-- Modal révision flashcard (SM-2) -->
+<div class="modal-overlay hidden" id="flashcardReviewModal">
+<div class="modal-box modal-box-review">
+<div class="review-header">
+<span class="review-progress" id="reviewProgress">1 / 10</span>
+<button class="btn btn-link" id="btnCloseReview" type="button">Fermer</button>
+</div>
+<div class="flashcard-flip-container" id="flashcardFlipContainer">
+<div class="flashcard-flip-inner" id="flashcardFlipInner">
+<div class="flashcard-flip-front">
+<p class="flashcard-question-text" id="reviewQuestionText"></p>
+</div>
+<div class="flashcard-flip-back">
+<p class="flashcard-answer-text" id="reviewAnswerText"></p>
+</div>
+</div>
+</div>
+<button class="btn btn-primary btn-reveal" id="btnRevealAnswer" type="button">Révéler la réponse</button>
+<!-- Boutons SM-2 : Difficile / Moyen / Facile -->
+<div class="review-buttons hidden" id="reviewButtons">
+<button class="btn btn-review-hard" id="btnReviewHard" type="button">Difficile</button>
+<button class="btn btn-review-medium" id="btnReviewMedium" type="button">Moyen</button>
+<button class="btn btn-review-easy" id="btnReviewEasy" type="button">Facile</button>
+</div>
+<div class="review-subject" id="reviewSubject"></div>
+</div>
+</div>
+<!-- Modal import confirmation -->
+<div class="modal-overlay hidden" id="importConfirmModal">
+<div class="modal-box modal-box-compact">
+<h3 class="modal-title">Importer une sauvegarde</h3>
+<p class="modal-hint">Cette action ajoutera les données importées à tes données actuelles. Souhaites-tu écraser les données existantes d'abord ?</p>
+<div class="modal-actions">
+<button class="btn btn-primary" id="btnImportMerge" type="button">Fusionner (ajouter)</button>
+<button class="btn btn-danger" id="btnImportReplace" type="button">Écraser et remplacer</button>
+<button class="btn btn-link" id="btnImportCancel" type="button">Annuler</button>
+</div>
+</div>
+</div>
+<!-- Dialogue de confirmation -->
+<div class="dialog-overlay hidden" id="confirmDialog">
+<div class="dialog-box">
+<p id="confirmMessage">Es-tu sûr·e ?</p>
+<div class="dialog-actions">
+<button class="btn btn-danger" id="btnConfirmYes" type="button">Oui</button>
+<button class="btn btn-secondary" id="btnConfirmNo" type="button">Non</button>
+</div>
+</div>
+</div>
+<!-- Tooltip contextuel -->
+<div class="contextual-tooltip hidden" id="contextualTooltip">
+<p id="contextualTooltipText"></p>
+<button class="btn btn-link btn-small" id="btnTooltipDismiss" type="button">Compris</button>
+</div>
+<!-- Toast -->
+<div aria-live="polite" class="toast hidden" id="toast">
+</div>
+</main>
+<!-- Footer -->
+<footer class="app-footer" id="appFooter">
+<span>Study Protocol Manager v1.0</span>
+</footer>
+<!-- Scripts -->
+<script src="db.js"></script>
+<script src="dashboard.js"></script>
+<script src="export.js"></script>
+<script src="app.js"></script>
+<div class="ab-attribution" style="text-align:center;margin-top:2rem;padding-top:1rem;border-top:1px solid rgba(128,128,128,0.25);font-size:0.8rem;opacity:0.65;">
+<a href="https://www.linkedin.com/in/antonin-bareau/" rel="noopener" style="font-weight:bold;color:inherit;text-decoration:none;" target="_blank">Antonin Bareau</a>
+   — 
+  <a href="https://creativecommons.org/licenses/by-sa/4.0/" rel="noopener" style="color:inherit;text-decoration:none;" target="_blank">Licence CC BY-SA 4.0</a>
+</div></body>
 </html>
